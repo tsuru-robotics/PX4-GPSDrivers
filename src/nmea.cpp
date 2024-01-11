@@ -221,7 +221,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		  13  Age of differential GPS data record, Type 1 or Type 9. Null field when DGPS is not used.
 		  14  Reference station ID, range 0000-4095. A null field when any reference station ID is selected and no corrections are received1.
 		  15
-		  The checksum data, always begins with *
+		  The checksum data, always begins withd4a69c22cbd0048b13348c9574806d2ace14d07e *
 		*/
 		double utc_time = 0.0, lat = 0.0, lon = 0.0;
 		float alt = 0.f, geoid_h = 0.f;
@@ -837,6 +837,316 @@ int GPSDriverNMEA::handleMessage(int len)
 		if (!_VEL_received) {
 			_VEL_received = true;
 		}
+	} else if ((memcmp(_rx_buffer, "$PQTMPVT,", 9) == 0) && (uiCalcComma >= 19))
+	{
+		/*
+		  $PQTMPVT,MsgVer,TOW,Date,Time,Res,FixMode,NumSatUsed,LeapS,Lat,Lon,Alt,Sep,
+		  VelN,VelE,VelD,Spd,Heading,HDOP,PDOP*Checksum<CR><LF>
+		*/
+		double utc_time = 0.0, lat = 0.0, lon = 0.0;
+		float alt = 0.f, sep = 0.f;
+		float vel_n = 0.f, vel_e = 0.f, vel_d = 0.f, spd = 0.f;
+		int  num_of_satellites = 0;
+		int nmea_date = 0;
+
+
+		/* Set buffer pointer to data (size of "$PQTMPVT," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		while (*(++bufptr) != ',') {} //skip MsgVer
+		while (*(++bufptr) != ',') {} //skip TOW
+
+		/* Extract <Date> */
+		if (bufptr && *(++bufptr) != ',') { nmea_date = static_cast<int>(strtol(bufptr, &endp, 10)); bufptr = endp; }
+
+		/* Extract <Time> */
+		if (bufptr && *(++bufptr) != ',') { utc_time = strtod(bufptr, &endp); bufptr = endp; }
+
+		while (*(++bufptr) != ',') {} //skip Res
+		while (*(++bufptr) != ',') {} //skip FixMode
+
+		/* Extract <NumSatUsed> */
+		if (bufptr && *(++bufptr) != ',') { num_of_satellites = strtol(bufptr, &endp, 10); bufptr = endp; }
+
+		/* skip LeapS */
+		while (*(++bufptr) != ',') {}
+
+		/* Extract <Lat> */
+		if (bufptr && *(++bufptr) != ',') { lat = strtod(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <Lon> */
+		if (bufptr && *(++bufptr) != ',') { lon = strtod(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <Alt> */
+		if (bufptr && *(++bufptr) != ',') { alt = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <Sep> */
+		if (bufptr && *(++bufptr) != ',') { sep = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <VelN> */
+		if (bufptr && *(++bufptr) != ',') { vel_n = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <VelE> */
+		if (bufptr && *(++bufptr) != ',') { vel_e = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <VelD> */
+		if (bufptr && *(++bufptr) != ',') { vel_d = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <Spd> */
+		if (bufptr && *(++bufptr) != ',') { spd = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Skip <Heading> */
+		while (*(++bufptr) != ',') {}
+
+		/* Skip <HDOP> */
+		while (*(++bufptr) != ',') {}
+
+
+		// Position - removed math, was somewhow incorrect
+		_gps_position->lon = static_cast<int>((int(lon * 10000000)));
+		_gps_position->lat = static_cast<int>((int(lat * 10000000)));
+
+		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
+			_last_POS_timeUTC = utc_time;
+			_POS_received = true;
+		}
+
+
+		// Altitude
+		_gps_position->alt = static_cast<int>(alt * 1000);
+		_gps_position->alt_ellipsoid = static_cast<int>((alt + sep) * 1000);
+		_ALT_received = true;
+
+
+		// Velocity
+		_gps_position->vel_m_s = spd;
+		_gps_position->vel_n_m_s = vel_n;
+		_gps_position->vel_e_m_s = vel_e;
+		_gps_position->vel_d_m_s = vel_d;
+		/**< Flag to indicate if NED speed is valid */
+		_gps_position->vel_ned_valid = true;
+
+		if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
+			_last_VEL_timeUTC = utc_time;
+			_VEL_received = true;
+		}
+
+
+		// DOP - do not use DOP from this message since VDOP not present
+		// _gps_position->hdop = hdop;
+
+
+		// Course over ground
+		// DO NOT SET since no variance available in message
+		/*
+		float track_rad = heading * M_PI_F / 180.0f; // rad in range [0, 2pi]
+		if (track_rad > M_PI_F)
+		{
+			track_rad -= 2.f * M_PI_F; // rad in range [-pi, pi]
+		}
+		_gps_position->cog_rad = track_rad;
+		_gps_position->c_variance_rad = 0.1f;
+		*/
+
+
+		// Satellites used
+		_gps_position->satellites_used = num_of_satellites;
+		_SVNUM_received = true;
+
+
+		// Timestamp
+		int utc_hour = static_cast<int>(utc_time / 10000);
+		int utc_minute = static_cast<int>((utc_time - utc_hour * 10000) / 100);
+		double utc_sec = static_cast<double>(utc_time - utc_hour * 10000 - utc_minute * 100);
+		int nmea_year = static_cast<int>(nmea_date / 10000);
+		int nmea_mth = static_cast<int>((nmea_date - nmea_year * 10000) / 100);
+		int nmea_day= static_cast<int>(nmea_date - nmea_year * 10000 - nmea_mth * 100);
+
+		/*
+		 * convert to unix timestamp
+		 */
+		struct tm timeinfo = {};
+		timeinfo.tm_year = nmea_year + 100;
+		timeinfo.tm_mon = nmea_mth - 1;
+		timeinfo.tm_mday = nmea_day;
+		timeinfo.tm_hour = utc_hour;
+		timeinfo.tm_min = utc_minute;
+		timeinfo.tm_sec = int(utc_sec);
+		timeinfo.tm_isdst = 0;
+
+#ifndef NO_MKTIME
+		time_t epoch = mktime(&timeinfo);
+
+		if (epoch > GPS_EPOCH_SECS) {
+			uint64_t usecs = static_cast<uint64_t>((utc_sec - static_cast<uint64_t>(utc_sec)) * 1000000);
+
+			// FMUv2+ boards have a hardware RTC, but GPS helps us to configure it
+			// and control its drift. Since we rely on the HRT for our monotonic
+			// clock, updating it from time to time is safe.
+			if (!_clock_set) {
+				timespec ts{};
+				ts.tv_sec = epoch;
+				ts.tv_nsec = usecs * 1000;
+				setClock(ts);
+				_clock_set = true;
+			}
+
+			_gps_position->time_utc_usec = static_cast<uint64_t>(epoch) * 1000000ULL;
+			_gps_position->time_utc_usec += usecs;
+
+		} else {
+			_gps_position->time_utc_usec = 0;
+		}
+
+#else
+		_gps_position->time_utc_usec = 0;
+#endif
+
+		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
+			_last_POS_timeUTC = utc_time;
+			_POS_received = true;
+		}
+
+		if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
+			_last_VEL_timeUTC = utc_time;
+			_VEL_received = true;
+		}
+
+		_TIME_received = true;
+
+		_gps_position->timestamp = gps_absolute_time();
+	} else if ((memcmp(_rx_buffer, "$PQTMVEL,", 9) == 0) && (uiCalcComma >= 11)) {
+		/*
+		  $PQTMVEL,1,<Time>,<VelN>,<VelE>,<VelD>,<GrdSpd>,<Spd>,
+		  <Heading>,<GrdSpdAcc>,<SpdAcc>,<HeadingAcc>*<Checksum><CR><LF>
+		*/
+		float vel_n = 0.f, vel_e = 0.f, vel_d = 0.f, grd_spd = 0.f;
+		float heading = 0.f;
+		float heading_acc = 99.9f;
+		float spd_acc = 99.9f;
+
+
+		/* Set buffer pointer to data (size of "$PQTMVEL," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		while (*(++bufptr) != ',') {} //skip 1 (MsgVer?)
+		while (*(++bufptr) != ',') {} //skip Time
+
+		/* Extract <VelN> */
+		if (bufptr && *(++bufptr) != ',') { vel_n = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <VelE> */
+		if (bufptr && *(++bufptr) != ',') { vel_e = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <VelD> */
+		if (bufptr && *(++bufptr) != ',') { vel_d = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <GrdSpd> */
+		if (bufptr && *(++bufptr) != ',') { grd_spd = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Skip <Spd> */
+		while (*(++bufptr) != ',') {}
+
+		/* Extract <Heading> // Course over ground */
+		if (bufptr && *(++bufptr) != ',') { heading = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Skip <GrdSpdAcc> */
+		while (*(++bufptr) != ',') {}
+
+		/* Extract <SpdAcc> */
+		if (bufptr && *(++bufptr) != ',') { spd_acc = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <HeadingAcc> // Course over ground accuracy */
+		if (bufptr && *(++bufptr) != ',') { heading_acc = strtof(bufptr, &endp); bufptr = endp; }
+
+
+		// Course over ground
+		float track_rad = heading * M_PI_F / 180.0f; // rad in range [0, 2pi]
+		float track_rad_accuracy = heading_acc * M_PI_F / 180.0f;
+
+		if (track_rad > M_PI_F)
+		{
+			track_rad -= 2.f * M_PI_F; // rad in range [-pi, pi]
+		}
+		_gps_position->cog_rad = track_rad;
+		_gps_position->c_variance_rad = track_rad_accuracy;
+
+
+		// Velocity
+		_gps_position->vel_m_s = grd_spd;
+		_gps_position->vel_n_m_s = vel_n;
+		_gps_position->vel_e_m_s = vel_e;
+		_gps_position->vel_d_m_s = vel_d;
+		_gps_position->s_variance_m_s = spd_acc;
+		/**< Flag to indicate if NED speed is valid */
+		_gps_position->vel_ned_valid = true;
+
+		_VEL_received = true;
+
+		// Should also fill in timestamp for vel according to SensorGps.msg
+		_gps_position->timestamp = gps_absolute_time();
+	} else if ((memcmp(_rx_buffer, "$PQTMEPE,", 9) == 0) && (uiCalcComma >= 6)) {
+		/*
+		  $PQTMEPE,2,<EPE_North>,<EPE_East>,<EPE_Down>,
+		  <EPE_2D>,<EPE_3D>*<Checksum><CR><LF>
+		*/
+		float epe_2d = 99.9f;
+		float epe_down = 99.9f;
+
+		/* Set buffer pointer to data (size of "$PQTMVEL," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		while (*(++bufptr) != ',') {} //skip 2 (MsgVer?)
+		while (*(++bufptr) != ',') {} //skip EPE_North
+		while (*(++bufptr) != ',') {} //skip EPE_East
+
+		/* Extract <EPE_Down> */
+		if (bufptr && *(++bufptr) != ',') { epe_down = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <EPE_2D> */
+		if (bufptr && *(++bufptr) != ',') { epe_2d = strtof(bufptr, &endp); bufptr = endp; }
+
+		while (*(++bufptr) != ',') {} //skip EPE_3D
+
+
+		// EPH and EPV
+		_gps_position->eph = epe_2d;
+		_gps_position->epv = epe_down;
+		_EPH_received = true;
+
+		// TODO should we add
+		// _last_FIX_timeUTC = utc_time;
+	} else if ((memcmp(_rx_buffer, "$PQTMDOP,", 9) == 0) && (uiCalcComma >= 9)) {
+		/*
+		  $PQTMDOP,<MsgVer>,<TOW>,<GDOP>,<PDOP>,<TDOP>,
+		  <VDOP>,<HDOP>,<NDOP>,<EDOP>*<Checksum><CR><LF>
+		*/
+		float hdop = 99.9f;
+		float vdop = 99.9f;
+
+		/* Set buffer pointer to data (size of "$PQTMVEL," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		while (*(++bufptr) != ',') {} //skip MsgVer
+		while (*(++bufptr) != ',') {} //skip TOW
+		while (*(++bufptr) != ',') {} //skip GDOP
+		while (*(++bufptr) != ',') {} //skip PDOP
+		while (*(++bufptr) != ',') {} //skip TDOP
+
+		/* Extract <VDOP> */
+		if (bufptr && *(++bufptr) != ',') { vdop = strtof(bufptr, &endp); bufptr = endp; }
+
+		/* Extract <HDOP> */
+		if (bufptr && *(++bufptr) != ',') { hdop = strtof(bufptr, &endp); bufptr = endp; }
+
+		while (*(++bufptr) != ',') {} //skip NDOP
+		while (*(++bufptr) != ',') {} //skip EDOP
+
+
+		// DOP
+		_gps_position->hdop = hdop;
+		_gps_position->vdop = vdop;
+		_DOP_received = true;
 	}
 
 	if (_sat_num_gga > 0) {
