@@ -516,30 +516,37 @@ int GPSDriverNMEA::handleMessage(int len)
 #ifndef NO_MKTIME
 		time_t epoch = mktime(&timeinfo);
 
-		if (epoch > GPS_EPOCH_SECS) {
-			uint64_t usecs = static_cast<uint64_t>((utc_sec - static_cast<uint64_t>(utc_sec)) * 1000000);
+		// Update Time only if received data is valid
+		// (otherwise we will overwrite valid time received in other messages)
+		if (Status == 'A') {
+			if (epoch > GPS_EPOCH_SECS) {
+				uint64_t usecs = static_cast<uint64_t>((utc_sec - static_cast<uint64_t>(utc_sec)) * 1000000);
 
-			// FMUv2+ boards have a hardware RTC, but GPS helps us to configure it
-			// and control its drift. Since we rely on the HRT for our monotonic
-			// clock, updating it from time to time is safe.
-			if (!_clock_set) {
-				timespec ts{};
-				ts.tv_sec = epoch;
-				ts.tv_nsec = usecs * 1000;
+				// FMUv2+ boards have a hardware RTC, but GPS helps us to configure it
+				// and control its drift. Since we rely on the HRT for our monotonic
+				// clock, updating it from time to time is safe.
+				if (!_clock_set) {
+					timespec ts{};
+					ts.tv_sec = epoch;
+					ts.tv_nsec = usecs * 1000;
 
-				setClock(ts);
-				_clock_set = true;
+					setClock(ts);
+					_clock_set = true;
+				}
+
+				_gps_position->time_utc_usec = static_cast<uint64_t>(epoch) * 1000000ULL;
+				_gps_position->time_utc_usec += usecs;
+
+			} else {
+				_gps_position->time_utc_usec = 0;
 			}
 
-			_gps_position->time_utc_usec = static_cast<uint64_t>(epoch) * 1000000ULL;
-			_gps_position->time_utc_usec += usecs;
-
-		} else {
-			_gps_position->time_utc_usec = 0;
+			_TIME_received = true;
 		}
 
 #else
 		_gps_position->time_utc_usec = 0;
+		_TIME_received = true;
 #endif
 
 		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
@@ -552,7 +559,6 @@ int GPSDriverNMEA::handleMessage(int len)
 			_VEL_received = true;
 		}
 
-		_TIME_received = true;
 
 	}	else if ((memcmp(_rx_buffer + 3, "GST,", 4) == 0) && (uiCalcComma == 8)) {
 
@@ -966,7 +972,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		 * convert to unix timestamp
 		 */
 		struct tm timeinfo = {};
-		timeinfo.tm_year = nmea_year + 100;
+		timeinfo.tm_year = nmea_year - 1900;
 		timeinfo.tm_mon = nmea_mth - 1;
 		timeinfo.tm_mday = nmea_day;
 		timeinfo.tm_hour = utc_hour;
