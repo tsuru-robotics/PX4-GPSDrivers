@@ -102,7 +102,7 @@ int GPSDriverNMEA::handleMessage(int len)
 	int ret = 0;
 
 	if ((memcmp(_rx_buffer + 3, "ZDA,", 4) == 0) && (uiCalcComma == 6)) {
-
+#ifndef NO_MKTIME
 		/*
 		UTC day, month, and year, and local time zone offset
 		An example of the ZDA message string is:
@@ -154,7 +154,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		timeinfo.tm_sec = int(utc_sec);
 		timeinfo.tm_isdst = 0;
 
-#ifndef NO_MKTIME
+
 		time_t epoch = mktime(&timeinfo);
 
 		if (epoch > GPS_EPOCH_SECS) {
@@ -221,7 +221,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		  13  Age of differential GPS data record, Type 1 or Type 9. Null field when DGPS is not used.
 		  14  Reference station ID, range 0000-4095. A null field when any reference station ID is selected and no corrections are received1.
 		  15
-		  The checksum data, always begins withd4a69c22cbd0048b13348c9574806d2ace14d07e *
+		  The checksum data, always begins with *
 		*/
 		double utc_time = 0.0, lat = 0.0, lon = 0.0;
 		float alt = 0.f, geoid_h = 0.f;
@@ -481,12 +481,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		float velocity_ms = ground_speed_K / 1.9438445f;
 		float velocity_north = velocity_ms * cosf(track_rad);
 		float velocity_east  = velocity_ms * sinf(track_rad);
-		int utc_hour = static_cast<int>(utc_time / 10000);
-		int utc_minute = static_cast<int>((utc_time - utc_hour * 10000) / 100);
-		double utc_sec = static_cast<double>(utc_time - utc_hour * 10000 - utc_minute * 100);
-		int nmea_day = static_cast<int>(nmea_date / 10000);
-		int nmea_mth = static_cast<int>((nmea_date - nmea_day * 10000) / 100);
-		int nmea_year = static_cast<int>(nmea_date - nmea_day * 10000 - nmea_mth * 100);
+
 		/* convert from degrees, minutes and seconds to degrees */
 		_gps_position->lat = static_cast<int>((int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000);
 		_gps_position->lon = static_cast<int>((int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000);
@@ -501,6 +496,13 @@ int GPSDriverNMEA::handleMessage(int len)
 		_gps_position->timestamp = gps_absolute_time();
 		_last_timestamp_time = gps_absolute_time();
 
+#ifndef NO_MKTIME
+		int utc_hour = static_cast<int>(utc_time / 10000);
+		int utc_minute = static_cast<int>((utc_time - utc_hour * 10000) / 100);
+		double utc_sec = static_cast<double>(utc_time - utc_hour * 10000 - utc_minute * 100);
+		int nmea_day = static_cast<int>(nmea_date / 10000);
+		int nmea_mth = static_cast<int>((nmea_date - nmea_day * 10000) / 100);
+		int nmea_year = static_cast<int>(nmea_date - nmea_day * 10000 - nmea_mth * 100);
 		/*
 		 * convert to unix timestamp
 		 */
@@ -513,7 +515,6 @@ int GPSDriverNMEA::handleMessage(int len)
 		timeinfo.tm_sec = int(utc_sec);
 		timeinfo.tm_isdst = 0;
 
-#ifndef NO_MKTIME
 		time_t epoch = mktime(&timeinfo);
 
 		// Update Time only if received data is valid
@@ -545,6 +546,8 @@ int GPSDriverNMEA::handleMessage(int len)
 		}
 
 #else
+		NMEA_UNUSED(utc_time);
+		NMEA_UNUSED(nmea_date);
 		_gps_position->time_utc_usec = 0;
 		_TIME_received = true;
 #endif
