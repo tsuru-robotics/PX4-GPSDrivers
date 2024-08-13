@@ -181,21 +181,21 @@ GPSDriverQL::parseChar(uint8_t b)
 
             decodeInit();
         }
-                                        break;
+            break;
 
-                                        //case QL_DECODE_RTCM3:
-                                        //	if (_rtcm_parsing->addByte(b)) {
-                                        //		snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
-                                        //		gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
-                                        //		decodeInit();
-                                        //	}
-                                        //	break;
+        case QL_DECODE_RTCM3:
+        	// if (_rtcm_parsing->addByte(b)) {
+        	// 	snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
+        	// 	gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
+        	// 	decodeInit();
+        	// }
+        	break;
     }
 
     return iRet;
 }
 
-bool 
+bool
 GPSDriverQL::is_same_nmea_msg_id(int offset, const char* msg_id)
 {
     int id_length = 0;
@@ -207,7 +207,7 @@ GPSDriverQL::is_same_nmea_msg_id(int offset, const char* msg_id)
 
     /* $PAIR319,$PQTM,$XXGGA */
     id_length = commaPos - (char*)_rx_buffer;
-    
+
     if (memcmp(_rx_buffer + offset, msg_id, id_length - offset) == 0){
         return true;
     }
@@ -255,7 +255,7 @@ GPSDriverQL::handleMessage(int packet_len)
             decode_msg_pairspf5(bufptr);
             _is_frame_end = true;
         }
-        else    
+        else
         {
             char* commaPos = std::strchr((char*)_rx_buffer, ',');
             if (commaPos != NULL)
@@ -365,7 +365,7 @@ GPSDriverQL::decode_msg_gga(char* bufptr)
     char* endp;
     double utc_time = 0.0, lat = 0.0, lon = 0.0;
     float alt = 0.f, geoid_h = 0.f;
-    float hdop = 99.9f, dgps_age = NAN;
+    float hdop = 99.9f;//, dgps_age = NAN;
     int  num_of_sv = 0, fix_quality = 0;
     char ns = '?', ew = '?';
 
@@ -393,7 +393,7 @@ GPSDriverQL::decode_msg_gga(char* bufptr)
 
     while (*(++bufptr) != ',') {} //skip M
 
-    if (bufptr && *(++bufptr) != ',') { dgps_age = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*dgps_age = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (ns == 'S') {
         lat = -lat;
@@ -404,11 +404,11 @@ GPSDriverQL::decode_msg_gga(char* bufptr)
     }
 
     /* convert from degrees, minutes and seconds to degrees */
-    _gps_position->longitude_deg = int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0;
-    _gps_position->latitude_deg = int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0;
+    _gps_position->lon = static_cast<int>((int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000);
+    _gps_position->lat = static_cast<int>((int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000);
     _gps_position->hdop = hdop;
-    _gps_position->altitude_msl_m = (double)alt;
-    _gps_position->altitude_ellipsoid_m = (double)(alt + geoid_h);
+    _gps_position->alt = static_cast<int>(alt * 1000);
+    _gps_position->alt_ellipsoid = _gps_position->alt + static_cast<int>(geoid_h * 1000);
     _sat_num_gga = static_cast<int>(num_of_sv);
 
     if (fix_quality <= 0) {
@@ -473,7 +473,7 @@ GPSDriverQL::decode_msg_rmc(char* bufptr)
     float ground_speed_K = 0.f;
     float track_true = 0.f;
     int nmea_date = 0;
-    float Mag_var = 0.f;
+    //float Mag_var = 0.f;
     char ns = '?', ew = '?';
 
     if (bufptr && *(++bufptr) != ',') { utc_time = strtod(bufptr, &endp); bufptr = endp; }
@@ -494,7 +494,7 @@ GPSDriverQL::decode_msg_rmc(char* bufptr)
 
     if (bufptr && *(++bufptr) != ',') { nmea_date = static_cast<int>(strtol(bufptr, &endp, 10)); bufptr = endp; }
 
-    if (bufptr && *(++bufptr) != ',') { Mag_var = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*Mag_var = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (ns == 'S') {
         lat = -lat;
@@ -519,8 +519,8 @@ GPSDriverQL::decode_msg_rmc(char* bufptr)
     float velocity_east = velocity_ms * sinf(track_rad);
 
     /* convert from degrees, minutes and seconds to degrees */
-    _gps_position->latitude_deg = int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0;
-    _gps_position->longitude_deg = int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0;
+    _gps_position->lon = static_cast<int>((int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000);
+    _gps_position->lat = static_cast<int>((int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000);
 
     _gps_position->vel_m_s = velocity_ms;
     _gps_position->vel_n_m_s = velocity_north;
@@ -608,15 +608,16 @@ GPSDriverQL::decode_msg_gsa(char* bufptr)
     7	The checksum data, always begins with *
     */
     char* endp;
-    char M_pos = ' ';
+    //char M_pos = ' ';
     int fix_mode = 0;
     uint8_t sat_id[12]{ 0 };
-    float pdop = 99.9f, hdop = 99.9f, vdop = 99.9f;
+    //float pdop = 99.9f;
+    float hdop = 99.9f, vdop = 99.9f;
     int sys_id = 0;
     int sat_count = 0;
-    uint8_t* used_svid = nullptr;
+    //uint8_t* used_svid = nullptr;
 
-    if (bufptr && *(++bufptr) != ',') { M_pos = *(bufptr++); }
+    if (bufptr && *(++bufptr) != ',') { /*M_pos = *(bufptr++);*/ }
 
     if (bufptr && *(++bufptr) != ',') { fix_mode = strtol(bufptr, &endp, 10); bufptr = endp; }
 
@@ -624,7 +625,7 @@ GPSDriverQL::decode_msg_gsa(char* bufptr)
         if (bufptr && *(++bufptr) != ',') { sat_count++; sat_id[y] = strtol(bufptr, &endp, 10); bufptr = endp; }
     }
 
-    if (bufptr && *(++bufptr) != ',') { pdop = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*pdop = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (bufptr && *(++bufptr) != ',') { hdop = strtof(bufptr, &endp); bufptr = endp; }
 
@@ -804,7 +805,7 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
             else {
                 satellite_info->used[offset] = 0;
             }
-            satellite_info->signal[offset] = signal_id;
+            //satellite_info->signal[offset] = signal_id;
         }
     }
 
@@ -831,29 +832,29 @@ GPSDriverQL::decode_msg_vtg(char* bufptr)
     */
     char* endp;
     float track_true = 0.f;
-    char T;
-    float track_mag = 0.f;
-    char M;
+    //char T;
+    //float track_mag = 0.f;
+    //char M;
     float ground_speed = 0.f;
-    char N;
-    float ground_speed_K = 0.f;
-    char K;
+    //char N;
+    //float ground_speed_K = 0.f;
+    //char K;
 
     if (bufptr && *(++bufptr) != ',') { track_true = strtof(bufptr, &endp); bufptr = endp; }
 
-    if (bufptr && *(++bufptr) != ',') { T = *(bufptr++); }
+    if (bufptr && *(++bufptr) != ',') { /*T = *(bufptr++);*/ }
 
-    if (bufptr && *(++bufptr) != ',') { track_mag = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*track_mag = strtof(bufptr, &endp); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { M = *(bufptr++); }
+    if (bufptr && *(++bufptr) != ',') { /*M = *(bufptr++);*/ }
 
     if (bufptr && *(++bufptr) != ',') { ground_speed = strtof(bufptr, &endp); bufptr = endp; }
 
-    if (bufptr && *(++bufptr) != ',') { N = *(bufptr++); }
+    if (bufptr && *(++bufptr) != ',') { /*N = *(bufptr++);*/ }
 
-    if (bufptr && *(++bufptr) != ',') { ground_speed_K = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*ground_speed_K = strtof(bufptr, &endp); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { K = *(bufptr++); }
+    if (bufptr && *(++bufptr) != ',') { /*K = *(bufptr++);*/ }
 
     float track_rad = track_true * M_PI_F / 180.0f; // rad in range [0, 2pi]
 
@@ -919,17 +920,17 @@ GPSDriverQL::decode_msg_pqtmvel(char* bufptr)
     */
 
     char* endp;
-    uint8_t version = 0;
-    float utc_time;
+    //uint8_t version = 0;
+    //float utc_time;
     double vel_n = 0, vel_e = 0, vel_d = 0;
-    double grd_spd = 0, spd = 0;
+    //double grd_spd = 0, spd = 0;
     double heading = 0;
-    double grd_spd_acc = 0, spd_acc = 0;
+    //double grd_spd_acc = 0, spd_acc = 0;
     double heading_acc = 0;
 
-    if (bufptr && *(++bufptr) != ',') { version = strtol(bufptr, &endp, 10); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*version = strtol(bufptr, &endp, 10); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { utc_time = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*utc_time = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (bufptr && *(++bufptr) != ',') { vel_n = strtof(bufptr, &endp); bufptr = endp; }
 
@@ -937,15 +938,15 @@ GPSDriverQL::decode_msg_pqtmvel(char* bufptr)
 
     if (bufptr && *(++bufptr) != ',') { vel_d = strtof(bufptr, &endp); bufptr = endp; }
 
-    if (bufptr && *(++bufptr) != ',') { grd_spd = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*grd_spd = strtof(bufptr, &endp); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { spd = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*spd = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (bufptr && *(++bufptr) != ',') { heading = strtof(bufptr, &endp); bufptr = endp; }
 
-    if (bufptr && *(++bufptr) != ',') { grd_spd_acc = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*grd_spd_acc = strtof(bufptr, &endp); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { spd_acc = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*spd_acc = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (bufptr && *(++bufptr) != ',') { heading_acc = strtof(bufptr, &endp); bufptr = endp; }
 
@@ -976,22 +977,24 @@ GPSDriverQL::decode_msg_pqtmepe(char* bufptr)
     */
 
     char* endp;
-    uint8_t version = 0;
-    double epe_north = 0, epe_east = 0, epe_down = 0;
-    double epe_2d = 0, epe_3d = 0;
+    //uint8_t version = 0;
+    //double epe_north = 0, epe_east = 0;
+    double epe_down = 0;
+    double epe_2d = 0;
+    /*double epe_3d = 0;*/
 
 
-    if (bufptr && *(++bufptr) != ',') { version = strtol(bufptr, &endp, 10); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*version = strtol(bufptr, &endp, 10); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { epe_north = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*epe_north = strtof(bufptr, &endp); bufptr = endp;*/ }
 
-    if (bufptr && *(++bufptr) != ',') { epe_east = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*epe_east = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     if (bufptr && *(++bufptr) != ',') { epe_down = strtof(bufptr, &endp); bufptr = endp; }
 
     if (bufptr && *(++bufptr) != ',') { epe_2d = strtof(bufptr, &endp); bufptr = endp; }
 
-    if (bufptr && *(++bufptr) != ',') { epe_3d = strtof(bufptr, &endp); bufptr = endp; }
+    if (bufptr && *(++bufptr) != ',') { /*epe_3d = strtof(bufptr, &endp); bufptr = endp;*/ }
 
     _gps_position->eph = epe_2d;
     _gps_position->epv = epe_down;
@@ -1126,6 +1129,6 @@ GPSDriverQL::enc_gps_position_info_str(uint8_t* log)
     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_msg_used: %d\r\n", _gps_position->rtcm_msg_used);
 
     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "_padding0: %d,%d \r\n\r\n", _gps_position->_padding0[0], _gps_position->_padding0[1]);
-    
+
     memcpy(log, buff, strlen((char*)buff) + 1);
 }

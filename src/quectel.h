@@ -70,11 +70,11 @@ private:
 	satellite_info_s _gal_satellite_info{ 0 };  // Galileo
 	satellite_info_s _qzss_satellite_info{ 0 };  // QZSS
 
-	uint8_t _gps_used_svid[SAT_INFO_MAX_SATELLITES]{ 0 };  // GPS
-	uint8_t _gln_used_svid[SAT_INFO_MAX_SATELLITES]{ 0 };  // GLONASS
-	uint8_t _bds_used_svid[SAT_INFO_MAX_SATELLITES]{ 0 };  // BDS
-	uint8_t _gal_used_svid[SAT_INFO_MAX_SATELLITES]{ 0 };  // Galileo
-	uint8_t _qzss_used_svid[SAT_INFO_MAX_SATELLITES]{ 0 };  // QZSS
+	uint8_t _gps_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // GPS
+	uint8_t _gln_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // GLONASS
+	uint8_t _bds_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // BDS
+	uint8_t _gal_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // Galileo
+	uint8_t _qzss_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // QZSS
 
 	double _last_POS_timeUTC{ 0 };
 	double _last_VEL_timeUTC{ 0 };
