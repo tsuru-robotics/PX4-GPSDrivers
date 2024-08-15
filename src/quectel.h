@@ -9,6 +9,7 @@
 #define QL_INFO(...) GPS_INFO(__VA_ARGS__)
 #define QL_WARN(...) GPS_WARN(__VA_ARGS__)
 #define QL_ERR(...)  GPS_ERR(__VA_ARGS__)
+#define QL_DEBUG(...) GPS_INFO(__VA_ARGS__)
 
 typedef enum {
 	QL_DECODE_UNINIT = 0,

@@ -60,7 +60,7 @@
 
 /**** Warning macros, disable to save memory */
 #define NMEA_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define NMEA_DEBUG(...)        {/*GPS_WARN(__VA_ARGS__);*/}
+#define NMEA_DEBUG(...)        {GPS_INFO(__VA_ARGS__);}
 
 GPSDriverNMEA::GPSDriverNMEA(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
@@ -707,6 +707,8 @@ int GPSDriverNMEA::handleMessage(int len)
 			int azimuth;
 			int snr;
 		} sat[4] {};
+
+		NMEA_DEBUG("Parsing GSV");
 
 		if (bufptr && *(++bufptr) != ',') { all_page_num = strtol(bufptr, &endp, 10); bufptr = endp; }
 

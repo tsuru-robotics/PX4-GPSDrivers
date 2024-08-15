@@ -704,6 +704,8 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
         int snr;
     } sat[4]{};
 
+    QL_DEBUG("Parsing GSV");
+
     if (bufptr && *(++bufptr) != ',') { all_page_num = strtol(bufptr, &endp, 10); bufptr = endp; }
 
     if (bufptr && *(++bufptr) != ',') { this_page_num = strtol(bufptr, &endp, 10); bufptr = endp; }
