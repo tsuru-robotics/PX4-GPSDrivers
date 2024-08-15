@@ -24,9 +24,12 @@
 #define	GNSS_SYSTEM_ID_QZSS       5
 
 
-GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void* callback_user, sensor_gps_s* gps_position) :
+GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void* callback_user,
+                        sensor_gps_s* gps_position,
+                        satellite_info_s *satellite_info) :
     GPSHelper(callback, callback_user),
-    _gps_position(gps_position)
+    _gps_position(gps_position),
+    _satellite_info(satellite_info)
 {
     decodeInit();
 }
@@ -688,7 +691,6 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
         */
     char* endp;
     int all_page_num = 0, this_page_num = 0, tot_sv_visible = 0;
-    satellite_info_s* satellite_info = nullptr;
     uint8_t* used_svid = nullptr;
     uint8_t* sat_num_gsv = nullptr;
     uint8_t signal_id = 0;
@@ -716,40 +718,35 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
 
     if (memcmp(_rx_buffer, "$GP", 3) == 0) {
         sat_num_gsv = &_sat_num_gpgsv;
-        satellite_info = &_gps_satellite_info;
         used_svid = _gps_used_svid;
 
     }
     else if (memcmp(_rx_buffer, "$GL", 3) == 0) {
         sat_num_gsv = &_sat_num_glgsv;
-        satellite_info = &_gln_satellite_info;
         used_svid = _gln_used_svid;
     }
     else if (memcmp(_rx_buffer, "$GA", 3) == 0) {
         sat_num_gsv = &_sat_num_gagsv;
-        satellite_info = &_gal_satellite_info;
         used_svid = _gal_used_svid;
     }
     else if (memcmp(_rx_buffer, "$GB", 3) == 0) {
         sat_num_gsv = &_sat_num_gbgsv;
-        satellite_info = &_bds_satellite_info;
         used_svid = _bds_used_svid;
     }
     else if (memcmp(_rx_buffer, "$GQ", 3) == 0) {
         sat_num_gsv = &_sat_num_gbgsv;
-        satellite_info = &_bds_satellite_info;
         used_svid = _bds_used_svid;
     }
     else {
         return 0;
     }
 
-    if ((this_page_num == 1) && (signal_id == 1) && satellite_info) {
-        memset(satellite_info->svid, 0, sizeof(satellite_info->svid));
-        memset(satellite_info->used, 0, sizeof(satellite_info->used));
-        memset(satellite_info->snr, 0, sizeof(satellite_info->snr));
-        memset(satellite_info->elevation, 0, sizeof(satellite_info->elevation));
-        memset(satellite_info->azimuth, 0, sizeof(satellite_info->azimuth));
+    if ((this_page_num == 1) && (signal_id == 1) && _satellite_info) {
+        memset(_satellite_info->svid, 0, sizeof(_satellite_info->svid));
+        memset(_satellite_info->used, 0, sizeof(_satellite_info->used));
+        memset(_satellite_info->snr, 0, sizeof(_satellite_info->snr));
+        memset(_satellite_info->elevation, 0, sizeof(_satellite_info->elevation));
+        memset(_satellite_info->azimuth, 0, sizeof(_satellite_info->azimuth));
     }
 
     int end = 4;
@@ -762,21 +759,21 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
 
         *sat_num_gsv += tot_sv_visible;
 
-        if (satellite_info) {
-            satellite_info->count = satellite_info_s::SAT_INFO_MAX_SATELLITES;
-            satellite_info->timestamp = gps_absolute_time();
+        if (_satellite_info) {
+            _satellite_info->count = satellite_info_s::SAT_INFO_MAX_SATELLITES;
+            _satellite_info->timestamp = gps_absolute_time();
         }
     }
     if ((this_page_num == 1) && (signal_id != 1)) {
         for (int y = 0; y < satellite_info_s::SAT_INFO_MAX_SATELLITES; y++) {
-            if (satellite_info->svid[y] == 0) {
+            if (_satellite_info->svid[y] == 0) {
                 break;
             }
             init++;
         }
     }
 
-    if (satellite_info) {
+    if (_satellite_info) {
         int offset = 0;
 
         for (int y = 0; y < end; y++) {
@@ -794,16 +791,16 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
                 break;
             }
 
-            satellite_info->svid[offset] = sat[y].svid;
-            satellite_info->snr[offset] = sat[y].snr;
-            satellite_info->elevation[offset] = sat[y].elevation;
-            satellite_info->azimuth[offset] = sat[y].azimuth;
+            _satellite_info->svid[offset] = sat[y].svid;
+            _satellite_info->snr[offset] = sat[y].snr;
+            _satellite_info->elevation[offset] = sat[y].elevation;
+            _satellite_info->azimuth[offset] = sat[y].azimuth;
 
             if (is_used_svid(sat[y].svid, used_svid)) {
-                satellite_info->used[offset] = 1;
+                _satellite_info->used[offset] = 1;
             }
             else {
-                satellite_info->used[offset] = 0;
+                _satellite_info->used[offset] = 0;
             }
             //satellite_info->signal[offset] = signal_id;
         }
@@ -1053,82 +1050,82 @@ GPSDriverQL::decode_msg_pairspf5(char* bufptr)
     return 1;
 }
 
-void
-GPSDriverQL::enc_gps_position_info_str(uint8_t* log)
-{
-    uint8_t buff[1024]{ 0 };
+// void
+// GPSDriverQL::enc_gps_position_info_str(uint8_t* log)
+// {
+//     uint8_t buff[1024]{ 0 };
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "\r\n gps_position_info. \r\n");
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "\r\n gps_position_info. \r\n");
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff),  "timestamp: %lu\r\n", _gps_position->timestamp);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff),  "timestamp: %lu\r\n", _gps_position->timestamp);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "timestamp_sample: %lu\r\n", _gps_position->timestamp_sample);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "timestamp_sample: %lu\r\n", _gps_position->timestamp_sample);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "latitude_deg: %.3f\r\n", _gps_position->latitude_deg);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "latitude_deg: %.3f\r\n", _gps_position->latitude_deg);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "longitude_deg: %.3f\r\n", _gps_position->longitude_deg);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "longitude_deg: %.3f\r\n", _gps_position->longitude_deg);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "altitude_msl_m: %.3f\r\n", _gps_position->altitude_msl_m);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "altitude_msl_m: %.3f\r\n", _gps_position->altitude_msl_m);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "altitude_ellipsoid_m: %.3f\r\n", _gps_position->altitude_ellipsoid_m);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "altitude_ellipsoid_m: %.3f\r\n", _gps_position->altitude_ellipsoid_m);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "time_utc_usec: %lu\r\n", _gps_position->time_utc_usec);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "time_utc_usec: %lu\r\n", _gps_position->time_utc_usec);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "device_id: %d\r\n", _gps_position->device_id);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "device_id: %d\r\n", _gps_position->device_id);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "s_variance_m_s: %.3f\r\n", _gps_position->s_variance_m_s);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "s_variance_m_s: %.3f\r\n", _gps_position->s_variance_m_s);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "c_variance_rad: %.3f\r\n", _gps_position->c_variance_rad);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "c_variance_rad: %.3f\r\n", _gps_position->c_variance_rad);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "eph: %.3f\r\n", _gps_position->eph);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "eph: %.3f\r\n", _gps_position->eph);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "epv: %.3f\r\n", _gps_position->epv);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "epv: %.3f\r\n", _gps_position->epv);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "hdop: %.3f\r\n", _gps_position->hdop);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "hdop: %.3f\r\n", _gps_position->hdop);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vdop: %.3f\r\n", _gps_position->vdop);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vdop: %.3f\r\n", _gps_position->vdop);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "noise_per_ms: %d\r\n", _gps_position->noise_per_ms);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "noise_per_ms: %d\r\n", _gps_position->noise_per_ms);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "jamming_indicator: %d\r\n", _gps_position->jamming_indicator);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "jamming_indicator: %d\r\n", _gps_position->jamming_indicator);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_m_s: %.3f\r\n", _gps_position->vel_m_s);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_m_s: %.3f\r\n", _gps_position->vel_m_s);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_n_m_s: %.3f\r\n", _gps_position->vel_n_m_s);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_n_m_s: %.3f\r\n", _gps_position->vel_n_m_s);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_e_m_s:%.3f\r\n", _gps_position->vel_e_m_s);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_e_m_s:%.3f\r\n", _gps_position->vel_e_m_s);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_d_m_s: %.3f\r\n", _gps_position->vel_d_m_s);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_d_m_s: %.3f\r\n", _gps_position->vel_d_m_s);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "cog_rad: %.3f\r\n", _gps_position->cog_rad);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "cog_rad: %.3f\r\n", _gps_position->cog_rad);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "timestamp_time_relative: %d\r\n", _gps_position->timestamp_time_relative);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "timestamp_time_relative: %d\r\n", _gps_position->timestamp_time_relative);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "heading: %.3f\r\n", _gps_position->heading);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "heading: %.3f\r\n", _gps_position->heading);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "heading_offset: %.3f\r\n", _gps_position->heading_offset);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "heading_offset: %.3f\r\n", _gps_position->heading_offset);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "heading_accuracy: %.3f\r\n", _gps_position->heading_accuracy);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "heading_accuracy: %.3f\r\n", _gps_position->heading_accuracy);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_injection_rate: %.3f\r\n", _gps_position->rtcm_injection_rate);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_injection_rate: %.3f\r\n", _gps_position->rtcm_injection_rate);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "automatic_gain_control: %d\r\n", _gps_position->automatic_gain_control);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "automatic_gain_control: %d\r\n", _gps_position->automatic_gain_control);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "fix_type: %d\r\n", _gps_position->fix_type);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "fix_type: %d\r\n", _gps_position->fix_type);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "jamming_state 1l: %d, l5: %d\r\n", _gps_position->jamming_l1_state, _gps_position->jamming_l5_state);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "jamming_state 1l: %d, l5: %d\r\n", _gps_position->jamming_l1_state, _gps_position->jamming_l5_state);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_ned_valid: %d\r\n", _gps_position->vel_ned_valid);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "vel_ned_valid: %d\r\n", _gps_position->vel_ned_valid);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "satellites_used: %d\r\n", _gps_position->satellites_used);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "satellites_used: %d\r\n", _gps_position->satellites_used);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "selected_rtcm_instance: %d\r\n", _gps_position->selected_rtcm_instance);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "selected_rtcm_instance: %d\r\n", _gps_position->selected_rtcm_instance);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_crc_failed: %d\r\n", _gps_position->rtcm_crc_failed);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_crc_failed: %d\r\n", _gps_position->rtcm_crc_failed);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_msg_used: %d\r\n", _gps_position->rtcm_msg_used);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "rtcm_msg_used: %d\r\n", _gps_position->rtcm_msg_used);
 
-    snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "_padding0: %d,%d \r\n\r\n", _gps_position->_padding0[0], _gps_position->_padding0[1]);
+//     snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "_padding0: %d,%d \r\n\r\n", _gps_position->_padding0[0], _gps_position->_padding0[1]);
 
-    memcpy(log, buff, strlen((char*)buff) + 1);
-}
+//     memcpy(log, buff, strlen((char*)buff) + 1);
+// }

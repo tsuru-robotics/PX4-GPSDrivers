@@ -22,16 +22,18 @@ typedef enum {
 class GPSDriverQL : public GPSHelper
 {
 public:
-	GPSDriverQL(GPSCallbackPtr callback, void* callback_user, sensor_gps_s* gps_position);
+	GPSDriverQL(GPSCallbackPtr callback, void* callback_user,
+	sensor_gps_s* gps_position,
+	satellite_info_s *satellite_info);
 	virtual ~GPSDriverQL() = default;
 
 	int receive(unsigned timeout) override;
 	int configure(unsigned& baudrate, const GPSConfig& config) override;
 
-	void enc_gps_position_info_str(uint8_t* log);
+	// void enc_gps_position_info_str(uint8_t* log);
 private:
 
-#define QL_RX_BUFF_LENGTH  (4096)
+#define QL_RX_BUFF_LENGTH  (1024)
 
 	/**
 	 * Parse the QL packet
@@ -64,11 +66,7 @@ private:
 	int decode_msg_pairspf5(char* bufptr);
 
 	sensor_gps_s* _gps_position{ nullptr };
-	satellite_info_s _gps_satellite_info{ 0 };  // GPS
-	satellite_info_s _gln_satellite_info{ 0 };	// GLONASS
-	satellite_info_s _bds_satellite_info{ 0 };  // BDS
-	satellite_info_s _gal_satellite_info{ 0 };  // Galileo
-	satellite_info_s _qzss_satellite_info{ 0 };  // QZSS
+	satellite_info_s *_satellite_info {nullptr};
 
 	uint8_t _gps_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // GPS
 	uint8_t _gln_used_svid[satellite_info_s::SAT_INFO_MAX_SATELLITES]{ 0 };  // GLONASS
