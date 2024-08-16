@@ -59,6 +59,7 @@ GPSDriverQL::receive(unsigned timeout)
             for (int i = 0; i < ret; i++) {
 
                 int len = parseChar(buf[i]);
+                QL_DEBUG("Parsed %d chars from %d bytes", len, ret);
                 if (len > 0) {
                     handled |= handleMessage(len);
                 }
@@ -71,11 +72,13 @@ GPSDriverQL::receive(unsigned timeout)
 
         if (ret < 0)
         {
+            QL_ERR("Read error %d", ret);
             return -1;
         }
 
         /* in case we keep trying but only get crap from GPS */
         if (time_started + timeout * 1000 < gps_absolute_time()) {
+            QL_ERR("in case we keep trying but only get crap from GPS");
             return -1;
         }
     }
@@ -224,6 +227,7 @@ GPSDriverQL::handleMessage(int packet_len)
     // snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "Need decode packet: %s\r\n", _rx_buffer);
 
     if (strstr((char*)_rx_buffer, "PQTM") != nullptr) {
+        QL_DEBUG("PQTM");
 
         char* bufptr = std::strchr((char*)_rx_buffer, ',');
 
@@ -246,6 +250,7 @@ GPSDriverQL::handleMessage(int packet_len)
         }
     }
     else if (strstr((char*)_rx_buffer, "PAIR") != nullptr) {
+        QL_DEBUG("PAIR");
 
         char* bufptr = std::strchr((char*)_rx_buffer, ',');
 
@@ -269,6 +274,8 @@ GPSDriverQL::handleMessage(int packet_len)
         }
     }
     else {
+
+        QL_DEBUG("ELSE");
 
         char* bufptr = (char*)(_rx_buffer + 6);
 
