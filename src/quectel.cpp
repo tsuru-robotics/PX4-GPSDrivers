@@ -15,7 +15,7 @@
 #include "rtcm.h"
 
 #define MAX(X,Y)    ((X) > (Y) ? (X) : (Y))
-#define HEXDIGIT_CHAR(d) ((char)((d) + (((d) < 0xA) ? '0' : 'A'-0xA)))
+// #define HEXDIGIT_CHAR(d) ((char)((d) + (((d) < 0xA) ? '0' : 'A'-0xA)))
 
 #define GNSS_SYSTEM_ID_GPS        1
 #define	GNSS_SYSTEM_ID_GLONASS    2
@@ -34,17 +34,69 @@ GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void* callback_user,
     decodeInit();
 }
 
+GPSDriverQL::~GPSDriverQL()
+{
+	delete _rtcm_parsing;
+}
+
 int
 GPSDriverQL::configure(unsigned& baudrate, const GPSConfig& config)
 {
 
-    return 0;
+    _output_mode = config.output_mode;
+
+	if (_output_mode != OutputMode::GPS) {
+		QL_WARN("RTCM output have to be configured manually");
+	}
+
+	// If a baudrate is defined, we test this first
+	if (baudrate > 0) {
+		setBaudrate(baudrate);
+		decodeInit();
+		int ret = receive(400);
+		gps_usleep(2000);
+
+		// If a valid POS message is received we have GPS
+		if (_POS_received || ret > 0) {
+			return 0;
+		}
+	}
+
+	// If we haven't found the GPS with the defined baudrate, we try other rates
+	const unsigned baudrates_to_try[] = {9600, 19200, 38400, 57600, 115200, 230400};
+	unsigned test_baudrate;
+
+	for (unsigned int baud_i = 0; !_POS_received
+	     && baud_i < sizeof(baudrates_to_try) / sizeof(baudrates_to_try[0]); baud_i++) {
+
+		test_baudrate = baudrates_to_try[baud_i];
+		setBaudrate(test_baudrate);
+
+		QL_DEBUG("baudrate set to %i", test_baudrate);
+
+		decodeInit();
+		int ret = receive(400);
+		gps_usleep(2000);
+
+		// If a valid POS message is received we have GPS
+		if (_POS_received || ret > 0) {
+			return 0;
+		}
+	}
+
+	// If nothing is found we leave the specified or default
+	if (baudrate > 0) {
+		return setBaudrate(baudrate);
+	}
+
+	return setBaudrate(QL_DEFAULT_BAUDRATE);
 }
 
 int
 GPSDriverQL::receive(unsigned timeout)
 {
-    uint8_t buf[QL_RX_BUFF_LENGTH]{ 0 };
+    uint8_t buf[GPS_READ_BUFFER_SIZE];
+
     /* timeout additional to poll */
     gps_abstime time_started = gps_absolute_time();
 
@@ -87,11 +139,20 @@ GPSDriverQL::receive(unsigned timeout)
 void
 GPSDriverQL::decodeInit()
 {
-    _rx_ck_a = 0;
-    _rx_ck_b = 0;
-    _rx_count = 0;
-    _decode_state = QL_DECODE_UNINIT;
+	_rx_buffer_bytes = 0;
+	_decode_state = NMEADecodeState::uninit;
+
+	if (_output_mode == OutputMode::GPSAndRTCM || _output_mode == OutputMode::RTCM) {
+		if (!_rtcm_parsing) {
+			_rtcm_parsing = new RTCMParsing();
+		}
+
+		if (_rtcm_parsing) {
+			_rtcm_parsing->reset();
+		}
+	}
 }
+
 void
 GPSDriverQL::msgFlagInit()
 {
@@ -124,81 +185,80 @@ GPSDriverQL::msgFlagInit()
     memset(_qzss_used_svid, 0, sizeof(_qzss_used_svid));
 }
 
-int
-GPSDriverQL::parseChar(uint8_t b)
+#define HEXDIGIT_CHAR(d) ((char)((d) + (((d) < 0xA) ? '0' : 'A'-0xA)))
+
+int GPSDriverQL::parseChar(uint8_t b)
 {
-    int iRet = 0;
+	int iRet = 0;
 
-    switch (_decode_state) {
-        /* First, look for sync */
-        case QL_DECODE_UNINIT:
-            if (b == '$') {
-                _decode_state = QL_DECODE_GOT_SYNC;
-                _rx_count = 0;
-                _rx_buffer[_rx_count++] = b;
+	switch (_decode_state) {
+	/* First, look for sync1 */
+	case NMEADecodeState::uninit:
+		if (b == '$') {
+			_decode_state = NMEADecodeState::got_sync1;
+			_rx_buffer_bytes = 0;
+			_rx_buffer[_rx_buffer_bytes++] = b;
 
-            }
-            //else if (b == RTCM3_PREAMBLE && _rtcm_parsing) {
-            //	_decode_state = QL_DECODE_RTCM3;
-            //	_rtcm_parsing->addByte(b);
+		} else if (b == RTCM3_PREAMBLE && _rtcm_parsing) {
+			_decode_state = NMEADecodeState::decode_rtcm3;
+			_rtcm_parsing->addByte(b);
 
-            //}
+		}
 
-            break;
+		break;
 
-        case QL_DECODE_GOT_SYNC:
-            if (b == '$') {
-                _decode_state = QL_DECODE_GOT_SYNC;
-                _rx_count = 0;
+	case NMEADecodeState::got_sync1:
+		if (b == '$') {
+			_decode_state = NMEADecodeState::got_sync1;
+			_rx_buffer_bytes = 0;
 
-            }
-            else if (b == '*') {
-                _decode_state = QL_DECODE_GOT_ASTERIK;
-            }
+		} else if (b == '*') {
+			_decode_state = NMEADecodeState::got_asteriks;
+		}
 
-            if (_rx_count >= (sizeof(_rx_buffer) - 5)) {
-                _decode_state = QL_DECODE_UNINIT;
-                _rx_count = 0;
+		if (_rx_buffer_bytes >= (sizeof(_rx_buffer) - 5)) {
+			_decode_state = NMEADecodeState::uninit;
+			_rx_buffer_bytes = 0;
 
-            }
-            else {
-                _rx_buffer[_rx_count++] = b;
-            }
+		} else {
+			_rx_buffer[_rx_buffer_bytes++] = b;
+		}
 
-            break;
+		break;
 
-        case QL_DECODE_GOT_ASTERIK:
-            _rx_buffer[_rx_count++] = b;
-            _decode_state = QL_DECODE_GOT_FIRST_CS_BYTE;
-            break;
+	case NMEADecodeState::got_asteriks:
+		_rx_buffer[_rx_buffer_bytes++] = b;
+		_decode_state = NMEADecodeState::got_first_cs_byte;
+		break;
 
-        case QL_DECODE_GOT_FIRST_CS_BYTE: {
-            _rx_buffer[_rx_count++] = b;
-            uint8_t checksum = 0;
-            uint8_t* buffer = _rx_buffer + 1;
-            uint8_t* bufend = _rx_buffer + _rx_count - 3;
+	case NMEADecodeState::got_first_cs_byte: {
+			_rx_buffer[_rx_buffer_bytes++] = b;
+			uint8_t checksum = 0;
+			uint8_t *buffer = _rx_buffer + 1;
+			uint8_t *bufend = _rx_buffer + _rx_buffer_bytes - 3;
 
-            for (; buffer < bufend; buffer++) { checksum ^= *buffer; }
+			for (; buffer < bufend; buffer++) { checksum ^= *buffer; }
 
-            if ((HEXDIGIT_CHAR(checksum >> 4) == *(_rx_buffer + _rx_count - 2)) &&
-                (HEXDIGIT_CHAR(checksum & 0x0F) == *(_rx_buffer + _rx_count - 1))) {
-                iRet = _rx_count;
-            }
+			if ((HEXDIGIT_CHAR(checksum >> 4) == *(_rx_buffer + _rx_buffer_bytes - 2)) &&
+			    (HEXDIGIT_CHAR(checksum & 0x0F) == *(_rx_buffer + _rx_buffer_bytes - 1))) {
+				iRet = _rx_buffer_bytes;
+			}
 
-            decodeInit();
-        }
-            break;
+			decodeInit();
+		}
+		break;
 
-        case QL_DECODE_RTCM3:
-        	// if (_rtcm_parsing->addByte(b)) {
-        	// 	snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
-        	// 	gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
-        	// 	decodeInit();
-        	// }
-        	break;
-    }
+	case NMEADecodeState::decode_rtcm3:
+		if (_rtcm_parsing->addByte(b)) {
+			QL_DEBUG("got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
+			gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
+			decodeInit();
+		}
 
-    return iRet;
+		break;
+	}
+
+	return iRet;
 }
 
 bool

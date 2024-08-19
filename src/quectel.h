@@ -11,22 +11,27 @@
 #define QL_ERR(...)  GPS_ERR(__VA_ARGS__)
 #define QL_DEBUG(...) GPS_INFO(__VA_ARGS__)
 
-typedef enum {
-	QL_DECODE_UNINIT = 0,
-	QL_DECODE_GOT_SYNC,
-	QL_DECODE_GOT_ASTERIK,
-	QL_DECODE_GOT_FIRST_CS_BYTE,
-	QL_DECODE_RTCM3
-} ql_decode_state_t;
+// typedef enum {
+// 	QL_DECODE_UNINIT = 0,
+// 	QL_DECODE_GOT_SYNC,
+// 	QL_DECODE_GOT_ASTERIK,
+// 	QL_DECODE_GOT_FIRST_CS_BYTE,
+// 	QL_DECODE_RTCM3
+// } ql_decode_state_t;
 
+class RTCMParsing;
+
+#define QL_RX_BUFF_LENGTH 1024
+#define QL_DEFAULT_BAUDRATE 115200
 
 class GPSDriverQL : public GPSHelper
 {
 public:
 	GPSDriverQL(GPSCallbackPtr callback, void* callback_user,
-	sensor_gps_s* gps_position,
-	satellite_info_s *satellite_info);
-	virtual ~GPSDriverQL() = default;
+		    sensor_gps_s* gps_position,
+		    satellite_info_s *satellite_info);
+
+	virtual ~GPSDriverQL();
 
 	int receive(unsigned timeout) override;
 	int configure(unsigned& baudrate, const GPSConfig& config) override;
@@ -34,7 +39,13 @@ public:
 	// void enc_gps_position_info_str(uint8_t* log);
 private:
 
-#define QL_RX_BUFF_LENGTH  (1024)
+	enum class NMEADecodeState {
+		uninit,
+		got_sync1,
+		got_asteriks,
+		got_first_cs_byte,
+		decode_rtcm3
+	};
 
 	/**
 	 * Parse the QL packet
@@ -103,11 +114,14 @@ private:
 
 	bool _is_frame_end{ false };
 
+	OutputMode _output_mode{OutputMode::GPS};
 
-//	RTCMParsing* _rtcm_parsing{ nullptr };
-	ql_decode_state_t _decode_state{ QL_DECODE_UNINIT };
-	unsigned _rx_count{};
+	RTCMParsing* _rtcm_parsing{ nullptr };
+
+	//ql_decode_state_t _decode_state{ QL_DECODE_UNINIT };
+	NMEADecodeState _decode_state{NMEADecodeState::uninit};
+	//unsigned _rx_count{};
+	uint16_t _rx_buffer_bytes{0};
 	uint8_t _rx_buffer[QL_RX_BUFF_LENGTH];
-	uint8_t _rx_ck_a{};
-	uint8_t _rx_ck_b{};
+
 };
