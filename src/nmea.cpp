@@ -185,6 +185,8 @@ int GPSDriverNMEA::handleMessage(int len)
 		_TIME_received = true;
 		_gps_position->timestamp = gps_absolute_time();
 
+		NMEA_DEBUG("ZDA parsed");
+
 	} else if ((memcmp(_rx_buffer + 3, "GGA,", 4) == 0) && (uiCalcComma >= 14)) {
 		/*
 		  Time, position, and fix related data
@@ -302,6 +304,8 @@ int GPSDriverNMEA::handleMessage(int len)
 		_gps_position->c_variance_rad = 0.1f;
 		_gps_position->timestamp = gps_absolute_time();
 
+		NMEA_DEBUG("GGA parsed");
+
 	} else if (memcmp(_rx_buffer + 3, "HDT,", 4) == 0 && uiCalcComma == 2) {
 		/*
 		Heading message
@@ -319,6 +323,8 @@ int GPSDriverNMEA::handleMessage(int len)
 		}
 
 		_HEAD_received = true;
+
+		NMEA_DEBUG("HDT parsed");
 
 	} else if ((memcmp(_rx_buffer + 3, "GNS,", 4) == 0) && (uiCalcComma >= 12)) {
 
@@ -406,6 +412,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		_ALT_received = true;
 		_SVNUM_received = true;
 
+		NMEA_DEBUG("GNS parsed");
 
 	} else if ((memcmp(_rx_buffer + 3, "RMC,", 4) == 0) && (uiCalcComma >= 11)) {
 
@@ -562,8 +569,9 @@ int GPSDriverNMEA::handleMessage(int len)
 			_VEL_received = true;
 		}
 
+		NMEA_DEBUG("RMC parsed");
 
-	}	else if ((memcmp(_rx_buffer + 3, "GST,", 4) == 0) && (uiCalcComma == 8)) {
+	} else if ((memcmp(_rx_buffer + 3, "GST,", 4) == 0) && (uiCalcComma == 8)) {
 
 		/*
 		Position error statistics
@@ -623,6 +631,8 @@ int GPSDriverNMEA::handleMessage(int len)
 		_EPH_received = true;
 		_last_FIX_timeUTC = utc_time;
 
+		NMEA_DEBUG("GST parsed");
+
 	} else if ((memcmp(_rx_buffer + 3, "GSA,", 4) == 0) && (uiCalcComma >= 17)) {
 
 		/*
@@ -677,6 +687,7 @@ int GPSDriverNMEA::handleMessage(int len)
 
 		}
 
+		NMEA_DEBUG("GSA parsed");
 
 	} else if ((memcmp(_rx_buffer + 3, "GSV,", 4) == 0)) {
 		/*
@@ -717,6 +728,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { tot_sv_visible = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		if ((this_page_num < 1) || (this_page_num > all_page_num)) {
+			NMEA_WARN("GSV parse error. this_page_num not valid");
 			return 0;
 		}
 
@@ -777,6 +789,7 @@ int GPSDriverNMEA::handleMessage(int len)
 			}
 		}
 
+		NMEA_DEBUG("GSV parsed");
 
 	} else if ((memcmp(_rx_buffer + 3, "VTG,", 4) == 0) && (uiCalcComma >= 8)) {
 
@@ -848,6 +861,9 @@ int GPSDriverNMEA::handleMessage(int len)
 		if (!_VEL_received) {
 			_VEL_received = true;
 		}
+
+		NMEA_DEBUG("VTG parsed");
+
 	} else if ((memcmp(_rx_buffer, "$PQTMPVT,", 9) == 0) && (uiCalcComma >= 19))
 	{
 		/*
@@ -1026,6 +1042,9 @@ int GPSDriverNMEA::handleMessage(int len)
 		_TIME_received = true;
 
 		_gps_position->timestamp = gps_absolute_time();
+
+		NMEA_DEBUG("PQTMPVT parsed");
+
 	} else if ((memcmp(_rx_buffer, "$PQTMVEL,", 9) == 0) && (uiCalcComma >= 11)) {
 		/*
 		  $PQTMVEL,1,<Time>,<VelN>,<VelE>,<VelD>,<GrdSpd>,<Spd>,
@@ -1096,6 +1115,9 @@ int GPSDriverNMEA::handleMessage(int len)
 
 		// Should also fill in timestamp for vel according to SensorGps.msg
 		_gps_position->timestamp = gps_absolute_time();
+
+		NMEA_DEBUG("PQTMVEL parsed");
+
 	} else if ((memcmp(_rx_buffer, "$PQTMEPE,", 9) == 0) && (uiCalcComma >= 6)) {
 		/*
 		  $PQTMEPE,2,<EPE_North>,<EPE_East>,<EPE_Down>,
@@ -1127,6 +1149,9 @@ int GPSDriverNMEA::handleMessage(int len)
 
 		// TODO should we add
 		// _last_FIX_timeUTC = utc_time;
+
+		NMEA_DEBUG("PQTMEPE parsed");
+
 	} else if ((memcmp(_rx_buffer, "$PQTMDOP,", 9) == 0) && (uiCalcComma >= 9)) {
 		/*
 		  $PQTMDOP,<MsgVer>,<TOW>,<GDOP>,<PDOP>,<TDOP>,
@@ -1158,6 +1183,8 @@ int GPSDriverNMEA::handleMessage(int len)
 		_gps_position->hdop = hdop;
 		_gps_position->vdop = vdop;
 		_DOP_received = true;
+
+		NMEA_DEBUG("PQTMDOP parsed");
 	}
 
 	if (_sat_num_gga > 0) {
