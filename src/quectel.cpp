@@ -111,13 +111,14 @@ GPSDriverQL::receive(unsigned timeout)
             for (int i = 0; i < ret; i++) {
 
                 int len = parseChar(buf[i]);
-                QL_DEBUG("Parsed %d chars from %d bytes", len, ret);
                 if (len > 0) {
+                    QL_DEBUG("Parsed %d chars from %d bytes", len, ret);
                     handled |= handleMessage(len);
                 }
             }
 
             if (handled > 0) {
+                QL_DEBUG("GPSDriverQL::receive valid return (handled=%d)", handled);
                 return handled;
             }
         }
@@ -130,7 +131,7 @@ GPSDriverQL::receive(unsigned timeout)
 
         /* in case we keep trying but only get crap from GPS */
         if (time_started + timeout * 1000 < gps_absolute_time()) {
-            QL_ERR("in case we keep trying but only get crap from GPS");
+            //QL_WARN"in case we keep trying but only get crap from GPS");
             return -1;
         }
     }
@@ -163,7 +164,7 @@ GPSDriverQL::msgFlagInit()
     _sat_num_glgsv = 0;
     _sat_num_gagsv = 0;
     _sat_num_gbgsv = 0;
-    _sat_num_gqgsv = 0;
+    //_sat_num_gqgsv = 0;
 
     _TIME_received = false;
     _POS_received = false;
@@ -284,10 +285,10 @@ int
 GPSDriverQL::handleMessage(int packet_len)
 {
     _rx_buffer[packet_len] = 0;
+    int ret = 0;
     // snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "Need decode packet: %s\r\n", _rx_buffer);
 
     if (strstr((char*)_rx_buffer, "PQTM") != nullptr) {
-        QL_DEBUG("PQTM");
 
         char* bufptr = std::strchr((char*)_rx_buffer, ',');
 
@@ -298,6 +299,14 @@ GPSDriverQL::handleMessage(int packet_len)
         else if (is_same_nmea_msg_id(1, "PQTMEPE"))
         {
             decode_msg_pqtmepe(bufptr);
+        }
+        else if (is_same_nmea_msg_id(1, "PQTMPVT"))
+        {
+            decode_msg_pqtmpvt(bufptr);
+        }
+        else if (is_same_nmea_msg_id(1, "PQTMDOP"))
+        {
+            decode_msg_pqtmdop(bufptr);
         }
         else
         {
@@ -310,7 +319,6 @@ GPSDriverQL::handleMessage(int packet_len)
         }
     }
     else if (strstr((char*)_rx_buffer, "PAIR") != nullptr) {
-        QL_DEBUG("PAIR");
 
         char* bufptr = std::strchr((char*)_rx_buffer, ',');
 
@@ -334,8 +342,6 @@ GPSDriverQL::handleMessage(int packet_len)
         }
     }
     else {
-
-        QL_DEBUG("ELSE");
 
         char* bufptr = (char*)(_rx_buffer + 6);
 
@@ -364,13 +370,36 @@ GPSDriverQL::handleMessage(int packet_len)
         }
     }
 
-    if (_is_frame_end)
-    {
-        msgFlagInit();
-        return 1;
-    }
+    if (_sat_num_gga > 0) {
+		_gps_position->satellites_used = _sat_num_gga;
 
-    return 0;
+	} else if (_SVNUM_received && _SVINFO_received && _FIX_received) {
+
+		_sat_num_gsv = _sat_num_gpgsv + _sat_num_glgsv + _sat_num_gagsv
+			       + _sat_num_gbgsv;
+		_gps_position->satellites_used = MAX(_sat_num_gns, _sat_num_gsv);
+	}
+
+	if (_VEL_received && _POS_received) {
+		ret = 1;
+		_gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
+		_clock_set = false;
+		_VEL_received = false;
+		_POS_received = false;
+		_rate_count_vel++;
+		_rate_count_lat_lon++;
+	}
+
+	return ret;
+
+
+
+    // if (_is_frame_end)
+    // {
+    //     msgFlagInit();
+    //     return 1;
+    // }
+    //return 1;
 }
 
 bool
@@ -509,6 +538,7 @@ GPSDriverQL::decode_msg_gga(char* bufptr)
     _gps_position->c_variance_rad = 0.1f;
     _gps_position->timestamp = gps_absolute_time();
 
+    QL_DEBUG("GGA parsed");
     return 1;
 }
 
@@ -652,6 +682,8 @@ GPSDriverQL::decode_msg_rmc(char* bufptr)
 
     _TIME_received = true;
 
+    QL_DEBUG("RMC parsed");
+
     return 1;
 }
 
@@ -730,6 +762,8 @@ GPSDriverQL::decode_msg_gsa(char* bufptr)
         else {}
     }
 
+    QL_DEBUG("GSA parsed");
+
     return 1;
 }
 
@@ -780,6 +814,7 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
     if (bufptr && *(++bufptr) != ',') { tot_sv_visible = strtol(bufptr, &endp, 10); bufptr = endp; }
 
     if ((this_page_num < 1) || (this_page_num > all_page_num)) {
+        QL_ERR("GSV parse error. this_page_num not valid");
         return 0;
     }
     lastComma = strrchr((char*)_rx_buffer, ',');
@@ -807,6 +842,7 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
         used_svid = _bds_used_svid;
     }
     else {
+        QL_ERR("GSV parse error. Sat system not valid");
         return 0;
     }
 
@@ -874,6 +910,8 @@ GPSDriverQL::decode_msg_gsv(char* bufptr)
             //satellite_info->signal[offset] = signal_id;
         }
     }
+
+    QL_DEBUG("GSV parsed");
 
     return 1;
 }
@@ -944,22 +982,7 @@ GPSDriverQL::decode_msg_vtg(char* bufptr)
         _VEL_received = true;
     }
 
-    if (_sat_num_gga > 0) {
-        _gps_position->satellites_used = _sat_num_gga;
-
-    }
-    else if (_SVNUM_received && _SVINFO_received && _FIX_received) {
-
-        _sat_num_gsv = _sat_num_gpgsv + _sat_num_glgsv + _sat_num_gagsv
-            + _sat_num_gbgsv + _sat_num_gqgsv;
-        _gps_position->satellites_used = MAX(_sat_num_gns, _sat_num_gsv);
-    }
-
-    if (_VEL_received && _POS_received) {
-        _gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
-        _rate_count_vel++;
-        _rate_count_lat_lon++;
-    }
+    QL_DEBUG("VTG parsed");
 
     return 1;
 }
@@ -1023,6 +1046,7 @@ GPSDriverQL::decode_msg_pqtmvel(char* bufptr)
     _gps_position->heading_accuracy = heading_acc;
     _gps_position->timestamp = gps_absolute_time();
 
+    QL_DEBUG("PQTMVEL parsed");
     return 1;
 }
 
@@ -1066,6 +1090,233 @@ GPSDriverQL::decode_msg_pqtmepe(char* bufptr)
     _gps_position->epv = epe_down;
     _gps_position->timestamp = gps_absolute_time();
 
+    QL_DEBUG("PQTMVEL parsed");
+    return 1;
+}
+
+int
+GPSDriverQL::decode_msg_pqtmpvt(char* bufptr)
+{
+    /*
+        $PQTMPVT,MsgVer,TOW,Date,Time,Res,FixMode,NumSatUsed,LeapS,Lat,Lon,Alt,Sep,
+        VelN,VelE,VelD,Spd,Heading,HDOP,PDOP*Checksum<CR><LF>
+    */
+    char* endp;
+    double utc_time = 0.0, lat = 0.0, lon = 0.0;
+    float alt = 0.f, sep = 0.f;
+    float vel_n = 0.f, vel_e = 0.f, vel_d = 0.f, spd = 0.f;
+    int  num_of_satellites = 0;
+    int nmea_date = 0;
+
+
+    /* Set buffer pointer to data (size of "$PQTMPVT," == 9)*/
+    bufptr = (char *)(_rx_buffer + 9);
+
+    while (*(++bufptr) != ',') {} //skip MsgVer
+    while (*(++bufptr) != ',') {} //skip TOW
+
+    /* Extract <Date> */
+    if (bufptr && *(++bufptr) != ',') { nmea_date = static_cast<int>(strtol(bufptr, &endp, 10)); bufptr = endp; }
+
+    /* Extract <Time> */
+    if (bufptr && *(++bufptr) != ',') { utc_time = strtod(bufptr, &endp); bufptr = endp; }
+
+    while (*(++bufptr) != ',') {} //skip Res
+    while (*(++bufptr) != ',') {} //skip FixMode
+
+    /* Extract <NumSatUsed> */
+    if (bufptr && *(++bufptr) != ',') { num_of_satellites = strtol(bufptr, &endp, 10); bufptr = endp; }
+
+    /* skip LeapS */
+    while (*(++bufptr) != ',') {}
+
+    /* Extract <Lat> */
+    if (bufptr && *(++bufptr) != ',') { lat = strtod(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <Lon> */
+    if (bufptr && *(++bufptr) != ',') { lon = strtod(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <Alt> */
+    if (bufptr && *(++bufptr) != ',') { alt = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <Sep> */
+    if (bufptr && *(++bufptr) != ',') { sep = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <VelN> */
+    if (bufptr && *(++bufptr) != ',') { vel_n = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <VelE> */
+    if (bufptr && *(++bufptr) != ',') { vel_e = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <VelD> */
+    if (bufptr && *(++bufptr) != ',') { vel_d = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <Spd> */
+    if (bufptr && *(++bufptr) != ',') { spd = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Skip <Heading> */
+    while (*(++bufptr) != ',') {}
+
+    /* Skip <HDOP> */
+    while (*(++bufptr) != ',') {}
+
+
+    // Position - removed math, was somewhow incorrect
+    _gps_position->lon = static_cast<int>((int(lon * 10000000)));
+    _gps_position->lat = static_cast<int>((int(lat * 10000000)));
+
+    if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
+        _last_POS_timeUTC = utc_time;
+        _POS_received = true;
+    }
+
+
+    // Altitude
+    _gps_position->alt = static_cast<int>(alt * 1000);
+    _gps_position->alt_ellipsoid = static_cast<int>((alt + sep) * 1000);
+    _ALT_received = true;
+
+
+    // Velocity
+    _gps_position->vel_m_s = spd;
+    _gps_position->vel_n_m_s = vel_n;
+    _gps_position->vel_e_m_s = vel_e;
+    _gps_position->vel_d_m_s = vel_d;
+    /**< Flag to indicate if NED speed is valid */
+    _gps_position->vel_ned_valid = true;
+
+    if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
+        _last_VEL_timeUTC = utc_time;
+        _VEL_received = true;
+    }
+
+
+    // DOP - do not use DOP from this message since VDOP not present
+    // _gps_position->hdop = hdop;
+
+
+    // Course over ground
+    // DO NOT SET since no variance available in message
+    /*
+    float track_rad = heading * M_PI_F / 180.0f; // rad in range [0, 2pi]
+    if (track_rad > M_PI_F)
+    {
+        track_rad -= 2.f * M_PI_F; // rad in range [-pi, pi]
+    }
+    _gps_position->cog_rad = track_rad;
+    _gps_position->c_variance_rad = 0.1f;
+    */
+
+
+    // Satellites used
+    _gps_position->satellites_used = num_of_satellites;
+    _SVNUM_received = true;
+
+
+    // Timestamp
+    int utc_hour = static_cast<int>(utc_time / 10000);
+    int utc_minute = static_cast<int>((utc_time - utc_hour * 10000) / 100);
+    double utc_sec = static_cast<double>(utc_time - utc_hour * 10000 - utc_minute * 100);
+    int nmea_year = static_cast<int>(nmea_date / 10000);
+    int nmea_mth = static_cast<int>((nmea_date - nmea_year * 10000) / 100);
+    int nmea_day= static_cast<int>(nmea_date - nmea_year * 10000 - nmea_mth * 100);
+
+    /*
+        * convert to unix timestamp
+        */
+    struct tm timeinfo = {};
+    timeinfo.tm_year = nmea_year - 1900;
+    timeinfo.tm_mon = nmea_mth - 1;
+    timeinfo.tm_mday = nmea_day;
+    timeinfo.tm_hour = utc_hour;
+    timeinfo.tm_min = utc_minute;
+    timeinfo.tm_sec = int(utc_sec);
+    timeinfo.tm_isdst = 0;
+
+#ifndef NO_MKTIME
+    time_t epoch = mktime(&timeinfo);
+
+    if (epoch > GPS_EPOCH_SECS) {
+        uint64_t usecs = static_cast<uint64_t>((utc_sec - static_cast<uint64_t>(utc_sec)) * 1000000);
+
+        // FMUv2+ boards have a hardware RTC, but GPS helps us to configure it
+        // and control its drift. Since we rely on the HRT for our monotonic
+        // clock, updating it from time to time is safe.
+        if (!_clock_set) {
+            timespec ts{};
+            ts.tv_sec = epoch;
+            ts.tv_nsec = usecs * 1000;
+            setClock(ts);
+            _clock_set = true;
+        }
+
+        _gps_position->time_utc_usec = static_cast<uint64_t>(epoch) * 1000000ULL;
+        _gps_position->time_utc_usec += usecs;
+
+    } else {
+        _gps_position->time_utc_usec = 0;
+    }
+
+#else
+    _gps_position->time_utc_usec = 0;
+#endif
+
+    if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
+        _last_POS_timeUTC = utc_time;
+        _POS_received = true;
+    }
+
+    if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
+        _last_VEL_timeUTC = utc_time;
+        _VEL_received = true;
+    }
+
+    _TIME_received = true;
+
+    _gps_position->timestamp = gps_absolute_time();
+
+    QL_DEBUG("PQTMPVT parsed");
+
+    return 1;
+}
+
+int
+GPSDriverQL::decode_msg_pqtmdop(char* bufptr)
+{
+    /*
+        $PQTMDOP,<MsgVer>,<TOW>,<GDOP>,<PDOP>,<TDOP>,
+        <VDOP>,<HDOP>,<NDOP>,<EDOP>*<Checksum><CR><LF>
+    */
+    char* endp;
+    float hdop = 99.9f;
+    float vdop = 99.9f;
+
+    /* Set buffer pointer to data (size of "$PQTMVEL," == 9)*/
+    bufptr = (char *)(_rx_buffer + 9);
+
+    while (*(++bufptr) != ',') {} //skip MsgVer
+    while (*(++bufptr) != ',') {} //skip TOW
+    while (*(++bufptr) != ',') {} //skip GDOP
+    while (*(++bufptr) != ',') {} //skip PDOP
+    while (*(++bufptr) != ',') {} //skip TDOP
+
+    /* Extract <VDOP> */
+    if (bufptr && *(++bufptr) != ',') { vdop = strtof(bufptr, &endp); bufptr = endp; }
+
+    /* Extract <HDOP> */
+    if (bufptr && *(++bufptr) != ',') { hdop = strtof(bufptr, &endp); bufptr = endp; }
+
+    while (*(++bufptr) != ',') {} //skip NDOP
+    while (*(++bufptr) != ',') {} //skip EDOP
+
+
+    // DOP
+    _gps_position->hdop = hdop;
+    _gps_position->vdop = vdop;
+    _DOP_received = true;
+
+    QL_DEBUG("PQTMDOP parsed");
+
     return 1;
 }
 
@@ -1090,6 +1341,8 @@ GPSDriverQL::decode_msg_pairspf(char* bufptr)
     _gps_position->jamming_l1_state = status;
 
     _gps_position->timestamp = gps_absolute_time();
+
+    QL_DEBUG("PAIRSPF parsed");
 
     return 1;
 }
@@ -1116,6 +1369,7 @@ GPSDriverQL::decode_msg_pairspf5(char* bufptr)
 
     _gps_position->timestamp = gps_absolute_time();
 
+    QL_DEBUG("PAIRSPF5 parsed");
     return 1;
 }
 

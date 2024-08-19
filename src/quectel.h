@@ -74,6 +74,8 @@ private:
 	int decode_msg_vtg(char* bufptr);
 	int decode_msg_pqtmvel(char* bufptr);
 	int decode_msg_pqtmepe(char* bufptr);
+	int decode_msg_pqtmpvt(char* bufptr);
+	int decode_msg_pqtmdop(char* bufptr);
 	int decode_msg_pairspf(char* bufptr);
 	int decode_msg_pairspf5(char* bufptr);
 
@@ -98,7 +100,9 @@ private:
 	uint8_t _sat_num_glgsv{ 0 };
 	uint8_t _sat_num_gagsv{ 0 };
 	uint8_t _sat_num_gbgsv{ 0 };
-	uint8_t _sat_num_gqgsv{ 0 };
+	//uint8_t _sat_num_gqgsv{ 0 };
+
+	bool _clock_set {false};
 
 	//  check if we got all basic essential packages we need
 	bool _TIME_received{ false };
