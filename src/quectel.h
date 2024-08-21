@@ -126,6 +126,6 @@ private:
 	NMEADecodeState _decode_state{NMEADecodeState::uninit};
 	//unsigned _rx_count{};
 	uint16_t _rx_buffer_bytes{0};
-	uint8_t _rx_buffer[QL_RX_BUFF_LENGTH];
+	uint8_t _rx_buffer[QL_RX_BUFF_LENGTH] {};
 
 };

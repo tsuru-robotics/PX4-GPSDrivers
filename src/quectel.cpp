@@ -105,6 +105,7 @@ GPSDriverQL::receive(unsigned timeout)
     while (true) {
 
         int ret = read(buf, sizeof(buf), timeout);
+        QL_DEBUG("Read %d bytes", ret);
 
         if (ret > 0)
         {
@@ -118,7 +119,7 @@ GPSDriverQL::receive(unsigned timeout)
             }
 
             if (handled > 0) {
-                QL_DEBUG("GPSDriverQL::receive valid return (handled=%d)", handled);
+                QL_DEBUG("Message handeled");
                 return handled;
             }
         }
@@ -195,6 +196,7 @@ int GPSDriverQL::parseChar(uint8_t b)
 	switch (_decode_state) {
 	/* First, look for sync1 */
 	case NMEADecodeState::uninit:
+        QL_DEBUG("uninit, _rx_buffer_bytes=%d", _rx_buffer_bytes);
 		if (b == '$') {
 			_decode_state = NMEADecodeState::got_sync1;
 			_rx_buffer_bytes = 0;
@@ -209,6 +211,7 @@ int GPSDriverQL::parseChar(uint8_t b)
 		break;
 
 	case NMEADecodeState::got_sync1:
+        QL_DEBUG("got_sync1, _rx_buffer_bytes=%d", _rx_buffer_bytes);
 		if (b == '$') {
 			_decode_state = NMEADecodeState::got_sync1;
 			_rx_buffer_bytes = 0;
@@ -228,11 +231,13 @@ int GPSDriverQL::parseChar(uint8_t b)
 		break;
 
 	case NMEADecodeState::got_asteriks:
+        QL_DEBUG("got_asteriks, _rx_buffer_bytes=%d", _rx_buffer_bytes);
 		_rx_buffer[_rx_buffer_bytes++] = b;
 		_decode_state = NMEADecodeState::got_first_cs_byte;
 		break;
 
 	case NMEADecodeState::got_first_cs_byte: {
+            QL_DEBUG("got_first_cs_byte, _rx_buffer_bytes=%d", _rx_buffer_bytes);
 			_rx_buffer[_rx_buffer_bytes++] = b;
 			uint8_t checksum = 0;
 			uint8_t *buffer = _rx_buffer + 1;
@@ -250,6 +255,7 @@ int GPSDriverQL::parseChar(uint8_t b)
 		break;
 
 	case NMEADecodeState::decode_rtcm3:
+        QL_DEBUG("gdecode_rtcm3");
 		if (_rtcm_parsing->addByte(b)) {
 			QL_DEBUG("got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
 			gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
@@ -259,6 +265,7 @@ int GPSDriverQL::parseChar(uint8_t b)
 		break;
 	}
 
+    QL_DEBUG("parseChar return %d", iRet);
 	return iRet;
 }
 
@@ -284,8 +291,10 @@ GPSDriverQL::is_same_nmea_msg_id(int offset, const char* msg_id)
 int
 GPSDriverQL::handleMessage(int packet_len)
 {
-    _rx_buffer[packet_len] = 0;
     int ret = 0;
+
+    QL_DEBUG("handleMessage packet_len=%d", packet_len);
+    _rx_buffer[packet_len] = 0;
     // snprintf((char*)buff + strlen((char*)buff), sizeof(buff), "Need decode packet: %s\r\n", _rx_buffer);
 
     if (strstr((char*)_rx_buffer, "PQTM") != nullptr) {
@@ -390,6 +399,7 @@ GPSDriverQL::handleMessage(int packet_len)
 		_rate_count_lat_lon++;
 	}
 
+    QL_DEBUG("handleMessage return  %d", ret);
 	return ret;
 
 
