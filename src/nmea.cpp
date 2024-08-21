@@ -272,6 +272,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		_gps_position->lat = static_cast<int>((int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000);
 		_gps_position->hdop = hdop;
 		_gps_position->alt = static_cast<int>(alt * 1000);
+		NMEA_DEBUG("GGA alt=%.3f m", (double)alt);
 		_gps_position->alt_ellipsoid = _gps_position->alt + static_cast<int>(geoid_h * 1000);
 		_sat_num_gga = static_cast<int>(num_of_sv);
 
@@ -402,6 +403,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		_gps_position->lon = static_cast<int>((int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000);
 		_gps_position->hdop = hdop;
 		_gps_position->alt = static_cast<int>(alt * 1000);
+		NMEA_DEBUG("GNS alt=%.3f m", (double)alt);
 		_sat_num_gns = static_cast<int>(num_of_sv);
 
 		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
@@ -719,8 +721,6 @@ int GPSDriverNMEA::handleMessage(int len)
 			int snr;
 		} sat[4] {};
 
-		NMEA_DEBUG("Parsing GSV");
-
 		if (bufptr && *(++bufptr) != ',') { all_page_num = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		if (bufptr && *(++bufptr) != ',') { this_page_num = strtol(bufptr, &endp, 10); bufptr = endp; }
@@ -755,6 +755,7 @@ int GPSDriverNMEA::handleMessage(int len)
 			memset(_satellite_info->snr,      0, sizeof(_satellite_info->snr));
 			memset(_satellite_info->elevation, 0, sizeof(_satellite_info->elevation));
 			memset(_satellite_info->azimuth,  0, sizeof(_satellite_info->azimuth));
+			NMEA_DEBUG("GSV: first page received, init _satellite_info");
 		}
 
 		int end = 4;
@@ -769,6 +770,8 @@ int GPSDriverNMEA::handleMessage(int len)
 				_satellite_info->count = satellite_info_s::SAT_INFO_MAX_SATELLITES;
 				_satellite_info->timestamp = gps_absolute_time();
 			}
+
+			NMEA_DEBUG("GSV: last sat page received");
 		}
 
 		if (_satellite_info) {
@@ -786,10 +789,11 @@ int GPSDriverNMEA::handleMessage(int len)
 				_satellite_info->snr[y + (this_page_num - 1) * 4]       = sat[y].snr;
 				_satellite_info->elevation[y + (this_page_num - 1) * 4] = sat[y].elevation;
 				_satellite_info->azimuth[y + (this_page_num - 1) * 4]   = sat[y].azimuth;
+				NMEA_DEBUG("GSV: sat page %d, import sat %d to _satellite_info", y, sat[y].svid);
 			}
 		}
 
-		NMEA_DEBUG("GSV parsed");
+		NMEA_DEBUG("GSV parsed, page %d, _satellite_info not null %d", this_page_num, (_satellite_info != nullptr));
 
 	} else if ((memcmp(_rx_buffer + 3, "VTG,", 4) == 0) && (uiCalcComma >= 8)) {
 
@@ -941,6 +945,7 @@ int GPSDriverNMEA::handleMessage(int len)
 
 		// Altitude
 		_gps_position->alt = static_cast<int>(alt * 1000);
+		NMEA_DEBUG("PQTMPVT alt=%.3f m", (double)alt);
 		_gps_position->alt_ellipsoid = static_cast<int>((alt + sep) * 1000);
 		_ALT_received = true;
 
@@ -1185,6 +1190,48 @@ int GPSDriverNMEA::handleMessage(int len)
 		_DOP_received = true;
 
 		NMEA_DEBUG("PQTMDOP parsed");
+
+	} else if ((memcmp(_rx_buffer, "$PAIRSPF5,", 10) == 0) && (uiCalcComma == 1)) {
+		/*
+		$PAIRSPF5,0*66
+
+		Field	Meaning
+		0	Message ID $PAIRSPF
+		1   Jamming status.
+		*/
+
+		uint8_t status = 0;
+
+		/* Set buffer pointer to data (size of "$PAIRSPF5," == 10)*/
+		bufptr = (char *)(_rx_buffer + 10);
+
+		if (bufptr && *(++bufptr) != ',') { status = strtol(bufptr, &endp, 10); bufptr = endp; }
+
+		_gps_position->jamming_l5_state = status;
+		_gps_position->timestamp = gps_absolute_time();
+
+		NMEA_DEBUG("PAIRSPF5 parsed");
+
+	}  else if ((memcmp(_rx_buffer, "$PAIRSPF,", 9) == 0) && (uiCalcComma == 1)) {
+		/*
+		$PAIRSPF,0*53
+
+		Field	Meaning
+		0	Message ID $PAIRSPF
+		1   Jamming status.
+		*/
+
+		uint8_t status = 0;
+
+		/* Set buffer pointer to data (size of "$PAIRSPF," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		if (bufptr && *(++bufptr) != ',') { status = strtol(bufptr, &endp, 10); bufptr = endp; }
+
+		_gps_position->jamming_l1_state = status;
+		_gps_position->timestamp = gps_absolute_time();
+
+		NMEA_DEBUG("PAIRSPF parsed");
 	}
 
 	if (_sat_num_gga > 0) {
