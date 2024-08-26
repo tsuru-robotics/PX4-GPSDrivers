@@ -55,12 +55,13 @@
 # define M_PI_F 3.14159265358979323846f
 #endif
 
+#define MIN(X,Y)              ((X) < (Y) ? (X) : (Y))
 #define MAX(X,Y)    ((X) > (Y) ? (X) : (Y))
 #define NMEA_UNUSED(x) (void)x;
 
 /**** Warning macros, disable to save memory */
 #define NMEA_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define NMEA_DEBUG(...)        {GPS_INFO(__VA_ARGS__);}
+#define NMEA_DEBUG(...)        {/*GPS_INFO(__VA_ARGS__);*/}
 
 GPSDriverNMEA::GPSDriverNMEA(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
@@ -750,12 +751,7 @@ int GPSDriverNMEA::handleMessage(int len)
 		}
 
 		if (this_page_num == 0 && _satellite_info) {
-			memset(_satellite_info->svid,     0, sizeof(_satellite_info->svid));
-			memset(_satellite_info->used,     0, sizeof(_satellite_info->used));
-			memset(_satellite_info->snr,      0, sizeof(_satellite_info->snr));
-			memset(_satellite_info->elevation, 0, sizeof(_satellite_info->elevation));
-			memset(_satellite_info->azimuth,  0, sizeof(_satellite_info->azimuth));
-			NMEA_DEBUG("GSV: first page received, init _satellite_info");
+			memset(_satellite_info, 0, sizeof(*_satellite_info));        // initialize sat info
 		}
 
 		int end = 4;
@@ -763,19 +759,29 @@ int GPSDriverNMEA::handleMessage(int len)
 		if (this_page_num == all_page_num) {
 			end =  tot_sv_visible - (this_page_num - 1) * 4;
 
-			_SVNUM_received = true;
 			_SVINFO_received = true;
 
 			if (_satellite_info) {
-				_satellite_info->count = satellite_info_s::SAT_INFO_MAX_SATELLITES;
+				_satellite_info->count = MIN(tot_sv_visible, satellite_info_s::SAT_INFO_MAX_SATELLITES);
 				_satellite_info->timestamp = gps_absolute_time();
 			}
-
-			NMEA_DEBUG("GSV: last sat page received");
 		}
 
 		if (_satellite_info) {
+			if ((end < 0) || (end > 4)) {
+				NMEA_WARN("GSV parse error. amount of satellites not valid");
+				return 0;
+			}
+			NMEA_DEBUG("GSV: parsing page %d/%d containig %d satellites info", this_page_num, all_page_num, end);
 			for (int y = 0 ; y < end ; y++) {
+
+				int sat_index = y + (this_page_num - 1) * 4;
+
+				if ((sat_index < 0) || (sat_index > satellite_info_s::SAT_INFO_MAX_SATELLITES)) {
+					NMEA_WARN("GSV parse error. sat_index %d not valid", sat_index);
+					return 0;
+				}
+
 				if (bufptr && *(++bufptr) != ',') { sat[y].svid = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 				if (bufptr && *(++bufptr) != ',') { sat[y].elevation = strtol(bufptr, &endp, 10); bufptr = endp; }
@@ -784,16 +790,17 @@ int GPSDriverNMEA::handleMessage(int len)
 
 				if (bufptr && *(++bufptr) != ',') { sat[y].snr = strtol(bufptr, &endp, 10); bufptr = endp; }
 
-				_satellite_info->svid[y + (this_page_num - 1) * 4]      = sat[y].svid;
-				_satellite_info->used[y + (this_page_num - 1) * 4]      = (sat[y].snr > 0);
-				_satellite_info->snr[y + (this_page_num - 1) * 4]       = sat[y].snr;
-				_satellite_info->elevation[y + (this_page_num - 1) * 4] = sat[y].elevation;
-				_satellite_info->azimuth[y + (this_page_num - 1) * 4]   = sat[y].azimuth;
-				NMEA_DEBUG("GSV: sat page %d, import sat %d to _satellite_info", y, sat[y].svid);
+				_satellite_info->svid[sat_index]      = sat[y].svid;
+				_satellite_info->used[sat_index]      = (sat[y].snr > 0);
+				_satellite_info->snr[sat_index]       = sat[y].snr;
+				_satellite_info->elevation[sat_index] = sat[y].elevation;
+				_satellite_info->azimuth[sat_index]   = sat[y].azimuth;
+
+				NMEA_DEBUG("GSV: added satellite id %d to satellite_info[%d]", sat[y].svid, sat_index);
 			}
 		}
 
-		NMEA_DEBUG("GSV parsed, page %d, _satellite_info not null %d", this_page_num, (_satellite_info != nullptr));
+		NMEA_DEBUG("GSV parsed");
 
 	} else if ((memcmp(_rx_buffer + 3, "VTG,", 4) == 0) && (uiCalcComma >= 8)) {
 
@@ -1254,10 +1261,16 @@ int GPSDriverNMEA::handleMessage(int len)
 		_rate_count_lat_lon++;
 	}
 
+	if (_SVINFO_received) {
+		ret = 2;
+		_SVINFO_received = false;
+	}
+
 	return ret;
 }
 
-int GPSDriverNMEA::receive(unsigned timeout)
+int	// -1 = error, 0 = no message handled, 1 = message handled, 2 = sat info message handled
+GPSDriverNMEA::receive(unsigned timeout)
 {
 	uint8_t buf[GPS_READ_BUFFER_SIZE];
 
@@ -1483,8 +1496,6 @@ int GPSDriverNMEA::configure(unsigned &baudrate, const GPSConfig &config)
 
 		test_baudrate = baudrates_to_try[baud_i];
 		setBaudrate(test_baudrate);
-
-		NMEA_DEBUG("baudrate set to %i", test_baudrate);
 
 		decodeInit();
 		int ret = receive(400);
