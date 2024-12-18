@@ -103,6 +103,7 @@
 #define UBX_ID_CFG_NAV5       0x24 // deprecated in protocol version >= 27 -> use CFG_VALSET
 #define UBX_ID_CFG_RST        0x04
 #define UBX_ID_CFG_SBAS       0x16
+#define UBX_ID_CFG_DGNSS      0x70 // deprecated in protocol version >= 27 -> use CFG_VALSET
 #define UBX_ID_CFG_TMODE3     0x71 // deprecated in protocol version >= 27 -> use CFG_VALSET
 #define UBX_ID_CFG_GNSS       0x3E
 #define UBX_ID_CFG_VALSET     0x8A
@@ -155,6 +156,7 @@
 #define UBX_MSG_CFG_NAV5      ((UBX_CLASS_CFG) | UBX_ID_CFG_NAV5 << 8)
 #define UBX_MSG_CFG_RST       ((UBX_CLASS_CFG) | UBX_ID_CFG_RST << 8)
 #define UBX_MSG_CFG_SBAS      ((UBX_CLASS_CFG) | UBX_ID_CFG_SBAS << 8)
+#define UBX_MSG_CFG_DGNSS     ((UBX_CLASS_CFG) | UBX_ID_CFG_DGNSS << 8)
 #define UBX_MSG_CFG_TMODE3    ((UBX_CLASS_CFG) | UBX_ID_CFG_TMODE3 << 8)
 #define UBX_MSG_CFG_GNSS      ((UBX_CLASS_CFG) | UBX_ID_CFG_GNSS << 8)
 #define UBX_MSG_CFG_VALGET    ((UBX_CLASS_CFG) | UBX_ID_CFG_VALGET << 8)
@@ -797,6 +799,12 @@ typedef struct {
 	uint8_t rate;
 } ubx_payload_tx_cfg_msg_t;
 
+/* CFG-DGNSS ublox 8 (protocol version >= 20) */
+typedef struct {
+	uint8_t  dgnssMode;
+	uint8_t  reserved3[3];
+} ubx_payload_tx_cfg_dgnss_t;
+
 /* CFG-TMODE3 ublox 8 (protocol version >= 20) */
 typedef struct {
 	uint8_t  version;
@@ -884,6 +892,7 @@ typedef union {
 	ubx_payload_tx_cfg_rst_t          payload_tx_cfg_rst;
 	ubx_payload_tx_cfg_sbas_t         payload_tx_cfg_sbas;
 	ubx_payload_tx_cfg_msg_t          payload_tx_cfg_msg;
+	ubx_payload_tx_cfg_dgnss_t        payload_tx_cfg_dgnss;
 	ubx_payload_tx_cfg_tmode3_t       payload_tx_cfg_tmode3;
 	ubx_payload_tx_cfg_cfg_t          payload_tx_cfg_cfg;
 	ubx_payload_tx_cfg_valset_t       payload_tx_cfg_valset;
@@ -942,7 +951,8 @@ public:
 		     uint8_t dynamic_model = 7,
 		     float heading_offset = 0.f,
 		     int32_t uart2_baudrate = 57600,
-		     UBXMode mode = UBXMode::Normal);
+		     UBXMode mode = UBXMode::Normal,
+		     uint8_t dgnss_mode = 3); /* RTK Fixed */
 
 	virtual ~GPSDriverUBX();
 
@@ -1061,6 +1071,11 @@ private:
 	int restartSurveyInPreV27();
 
 	/**
+	 * DGNSS conﬁguration for M8P
+	 */
+	int configureDgnssM8P();
+
+	/**
 	 * Parse the binary UBX packet
 	 */
 	int parseChar(const uint8_t b);
@@ -1132,6 +1147,7 @@ private:
 	const UBXMode _mode;
 	const float _heading_offset;
 	const int32_t _uart2_baudrate;
+	const uint8_t _dgnss_mode;
 };
 
 

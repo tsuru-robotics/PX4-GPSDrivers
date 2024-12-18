@@ -69,7 +69,7 @@
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
-			   float heading_offset, int32_t uart2_baudrate, UBXMode mode) :
+			   float heading_offset, int32_t uart2_baudrate, UBXMode mode, uint8_t dgnss_mode) :
 	GPSBaseStationSupport(callback, callback_user),
 	_interface(gpsInterface),
 	_gps_position(gps_position),
@@ -77,7 +77,8 @@ GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void
 	_dyn_model(dynamic_model),
 	_mode(mode),
 	_heading_offset(heading_offset),
-	_uart2_baudrate(uart2_baudrate)
+	_uart2_baudrate(uart2_baudrate),
+	_dgnss_mode(dgnss_mode)
 {
 	decodeInit();
 }
@@ -375,6 +376,11 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 		return -1;
 	}
 
+	if (configureDgnssM8P() < 0) {
+		UBX_WARN("DGNSS config failed");
+		return -1;
+	}
+
 	/* configure active GNSS systems (number of channels and used signals taken from U-Center default) */
 	if (static_cast<int32_t>(gnssSystems) != 0) {
 		memset(&_buf.payload_tx_cfg_gnss, 0, sizeof(_buf.payload_tx_cfg_gnss));
@@ -582,7 +588,7 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 
 	// RTK (optional, as only RTK devices like F9P support it)
 	cfg_valset_msg_size = initCfgValset();
-	cfgValset<uint8_t>(UBX_CFG_KEY_NAVHPG_DGNSSMODE, 3 /* RTK Fixed */, cfg_valset_msg_size);
+	cfgValset<uint8_t>(UBX_CFG_KEY_NAVHPG_DGNSSMODE, _dgnss_mode, cfg_valset_msg_size);
 
 	if (!sendMessage(UBX_MSG_CFG_VALSET, (uint8_t *)&_buf, cfg_valset_msg_size)) {
 		return -1;
@@ -2378,6 +2384,23 @@ GPSDriverUBX::configureMessageRateAndAck(uint16_t msg, uint8_t rate, bool report
 	}
 
 	return waitForAck(UBX_MSG_CFG_MSG, UBX_CONFIG_TIMEOUT, report_ack_error) >= 0;
+}
+
+int
+GPSDriverUBX::configureDgnssM8P()
+{
+	memset(&_buf.payload_tx_cfg_dgnss, 0, sizeof(_buf.payload_tx_cfg_dgnss));
+	_buf.payload_tx_cfg_dgnss.dgnssMode = _dgnss_mode;
+
+	if (!sendMessage(UBX_MSG_CFG_DGNSS, (uint8_t *)&_buf, sizeof(_buf.payload_tx_cfg_dgnss))) {
+		return -1;
+	}
+
+	if (waitForAck(UBX_MSG_CFG_DGNSS, UBX_CONFIG_TIMEOUT, true) < 0) {
+		return -1;
+	}
+
+	return 0;
 }
 
 bool
