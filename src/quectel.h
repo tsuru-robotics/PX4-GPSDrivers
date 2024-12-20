@@ -51,7 +51,7 @@
 class RTCMParsing;
 
 #define NMEA_RECV_BUFFER_SIZE 1024
-#define NMEA_DEFAULT_BAUDRATE 115200
+#define QL_DEFAULT_BAUDRATE 460800
 
 class GPSDriverQL : public GPSHelper
 {
@@ -92,6 +92,17 @@ private:
 	double read_float();
 	char read_char();
 
+	/**
+	 * disable_gsv
+	 * @return true on success, false on write error (errno set)
+	 */
+	bool disable_gsv();
+
+	/**
+	 * NMEA Checksum
+	 */
+	int calcChecksum(const unsigned char *msg, size_t msg_length, unsigned char* checksum);
+
 	sensor_gps_s *_gps_position {nullptr};
 	satellite_info_s *_satellite_info {nullptr};
 	double _last_POS_timeUTC{0};
@@ -108,6 +119,9 @@ private:
 	NMEADecodeState _decode_state{NMEADecodeState::uninit};
 	uint8_t _rx_buffer[NMEA_RECV_BUFFER_SIZE] {};
 	uint16_t _rx_buffer_bytes{0};
+
+	uint8_t _ack_command{0};
+	uint8_t _ack_result{0};
 
 	OutputMode _output_mode{OutputMode::GPS};
 

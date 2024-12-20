@@ -61,7 +61,7 @@
 
 /**** Warning macros, disable to save memory */
 #define NMEA_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define NMEA_DEBUG(...)        {/*GPS_INFO(__VA_ARGS__);*/}
+#define NMEA_DEBUG(...)        {GPS_INFO(__VA_ARGS__);}
 
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
@@ -599,7 +599,7 @@ int GPSDriverQL::handleMessage(int len)
 
 		Field	Meaning
 		0	Message ID $PAIRSPF
-		1   Jamming status.
+		1   	Jamming status.
 		*/
 
 		uint8_t status = 0;
@@ -619,7 +619,7 @@ int GPSDriverQL::handleMessage(int len)
 
 		Field	Meaning
 		0	Message ID $PAIRSPF
-		1   Jamming status.
+		1  	Jamming status.
 		*/
 
 		uint8_t status = 0;
@@ -632,6 +632,19 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->jamming_l1_state = status;
 		_gps_position->timestamp = gps_absolute_time();
 		_last_timestamp_time = gps_absolute_time();
+
+	} else if ((memcmp(_rx_buffer, "$PAIR001,", 9) == 0) && (uiCalcComma == 1)) {
+		/*
+		PAIR_ACK
+		$PAIR001,<CommandID>,<Result>*<Checksum><CR><LF>
+		*/
+
+		/* Set buffer pointer to data (size of "$PAIR001," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		if (bufptr && *(++bufptr) != ',') { _ack_command = strtol(bufptr, &endp, 10); bufptr = endp; }
+		if (bufptr && *(++bufptr) != ',') { _ack_result = strtol(bufptr, &endp, 10); bufptr = endp; }
+
 	}
 
 	if (_VEL_received && _POS_received) {
@@ -859,7 +872,17 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 
 	// If a baudrate is defined, we test this first
 	if (baudrate > 0) {
+
+		NMEA_DEBUG("baudrate set to %i", baudrate);
 		setBaudrate(baudrate);
+
+		/* flush input and wait for at least 20 ms silence */
+		decodeInit();
+		receive(20);
+		decodeInit();
+
+		disable_gsv();
+
 		decodeInit();
 		int ret = receive(400);
 		gps_usleep(2000);
@@ -871,16 +894,23 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 	}
 
 	// If we haven't found the GPS with the defined baudrate, we try other rates
-	const unsigned baudrates_to_try[] = {9600, 19200, 38400, 57600, 115200, 230400, 460800};
+	const unsigned baudrates_to_try[] = {9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600};
 	unsigned test_baudrate;
 
 	for (unsigned int baud_i = 0; !_POS_received
 	     && baud_i < sizeof(baudrates_to_try) / sizeof(baudrates_to_try[0]); baud_i++) {
 
 		test_baudrate = baudrates_to_try[baud_i];
-		setBaudrate(test_baudrate);
 
 		NMEA_DEBUG("baudrate set to %i", test_baudrate);
+		setBaudrate(test_baudrate);
+
+		/* flush input and wait for at least 20 ms silence */
+		decodeInit();
+		receive(20);
+		decodeInit();
+
+		disable_gsv();
 
 		decodeInit();
 		int ret = receive(400);
@@ -897,5 +927,61 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 		return setBaudrate(baudrate);
 	}
 
-	return setBaudrate(NMEA_DEFAULT_BAUDRATE);
+	return setBaudrate(QL_DEFAULT_BAUDRATE);
+}
+
+bool
+GPSDriverQL::disable_gsv()
+{
+	unsigned char msg[32] = "";
+	snprintf((char *)msg, sizeof(msg), "$PAIR062,3,0*");
+
+	unsigned char checksum[3] = "";
+	if (calcChecksum(msg, strlen((char *)msg), checksum) < 0) {
+		NMEA_WARN("Checksum calculation failed");
+		return false;
+	}
+
+	strncat((char *)msg, (char *)checksum, sizeof(msg) - strlen((char *)msg) - 1);
+
+	strncat((char *)msg, "\r\n",           sizeof(msg) - strlen((char *)msg) - 1);
+
+	size_t msg_size = strlen((char *)msg);
+	if (write((void *)&msg, msg_size) != (int)msg_size) {
+		NMEA_WARN("Error writing %s", msg);
+		return false;
+	}
+
+	NMEA_DEBUG("Succesfully sent %s", msg);
+
+	receive(250);
+
+	if (_ack_command == 062) {
+		if (!_ack_result) {
+			NMEA_DEBUG("Received ACK");
+		} else {
+			NMEA_WARN("Received NAK (result %d)", _ack_result);
+		}
+	} else {
+		NMEA_WARN("Timeout waiting ACK");
+	}
+
+	return true;
+}
+
+int GPSDriverQL::calcChecksum(const unsigned char *msg, size_t msg_length, unsigned char* checksum)
+{
+	unsigned char sum = 0;
+
+	if((nullptr == msg) || (msg_length < 1)) {
+		return -1;
+	}
+
+	for(size_t i = 1; (i < msg_length) && (msg[i] != '\0') && (msg[i] != '*'); i++) { // Skip the '$'
+		sum ^= msg[i];
+	}
+
+	snprintf((char *)checksum, 3, "%02X", sum);
+
+	return 0;
 }
