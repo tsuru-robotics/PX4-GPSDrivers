@@ -645,6 +645,7 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { _ack_command = strtol(bufptr, &endp, 10); bufptr = endp; }
 		if (bufptr && *(++bufptr) != ',') { _ack_result = strtol(bufptr, &endp, 10); bufptr = endp; }
 
+		NMEA_DEBUG("Received PAIR001, command=%d, result=%d", _ack_command, _ack_result);
 	}
 
 	if (_VEL_received && _POS_received) {
@@ -954,7 +955,7 @@ GPSDriverQL::disable_gsv()
 
 	NMEA_DEBUG("Succesfully sent %s", msg);
 
-	receive(250);
+	receive(2000);
 
 	if (_ack_command == 062) {
 		if (!_ack_result) {
