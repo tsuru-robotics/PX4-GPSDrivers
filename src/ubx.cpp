@@ -676,6 +676,10 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 	cfgValsetPort(UBX_CFG_KEY_MSGOUT_UBX_NAV_STATUS_I2C, 1, cfg_valset_msg_size);
 	cfgValsetPort(UBX_CFG_KEY_MSGOUT_UBX_MON_RF_I2C, 1, cfg_valset_msg_size);
 
+	if ((_board == Board::u_blox9) || (_board == Board::u_blox9_F9P)) {
+		cfgValsetPort(UBX_CFG_KEY_MSGOUT_UBX_RXM_RTCM_I2C, 1, cfg_valset_msg_size);
+	}
+
 	if (!sendMessage(UBX_MSG_CFG_VALSET, (uint8_t *)&_buf, cfg_valset_msg_size)) {
 		return -1;
 	}
@@ -1435,6 +1439,16 @@ GPSDriverUBX::payloadRxInit()
 
 		break;
 
+	case UBX_MSG_RXM_RTCM:
+		if (_rx_payload_length < sizeof(ubx_payload_rx_rxm_rtcm_t)) {
+			_rx_state = UBX_RXMSG_ERROR_LENGTH;
+
+		} else if (!_configured) {
+			_rx_state = UBX_RXMSG_IGNORE;        // ignore if not _configured
+		}
+
+		break;
+
 	case UBX_MSG_ACK_ACK:
 		if (_rx_payload_length != sizeof(ubx_payload_rx_ack_ack_t)) {
 			_rx_state = UBX_RXMSG_ERROR_LENGTH;
@@ -1694,7 +1708,7 @@ GPSDriverUBX::payloadRxAddNavSvinfo(const uint8_t b)
 				unsigned sat_index = (_rx_payload_index - sizeof(ubx_payload_rx_nav_svinfo_part1_t)) /
 						     sizeof(ubx_payload_rx_nav_svinfo_part2_t);
 				_satellite_info->svid[sat_index]      = static_cast<uint8_t>(_buf.payload_rx_nav_svinfo_part2.svid);
-				_satellite_info->used[sat_index]      = static_cast<uint8_t>(_buf.payload_rx_nav_svinfo_part2.flags & 0x01);
+				_satellite_info->used[sat_index]      = static_cast<uint8_t>(_buf.payload_rx_nav_svinfo_part2.flags >> 3 & 0x01);
 				_satellite_info->elevation[sat_index] = static_cast<uint8_t>(_buf.payload_rx_nav_svinfo_part2.elev);
 				_satellite_info->azimuth[sat_index]   = static_cast<uint8_t>(static_cast<float>(_buf.payload_rx_nav_svinfo_part2.azim) *
 									255.0f / 360.0f);
@@ -2221,6 +2235,17 @@ GPSDriverUBX::payloadRxDone()
 		_gps_position->noise_per_ms		= _buf.payload_rx_mon_rf.block[0].noisePerMS;
 		_gps_position->jamming_indicator	= _buf.payload_rx_mon_rf.block[0].jamInd;
 		_gps_position->jamming_state		= _buf.payload_rx_mon_rf.block[0].flags;
+
+		ret = 1;
+		break;
+
+	case UBX_MSG_RXM_RTCM:
+		UBX_TRACE_RXMSG("Rx RXM-RTCM");
+
+		_gps_position->rtcm_crc_failed = (_buf.payload_rx_rxm_rtcm.flags & UBX_RX_RXM_RTCM_CRCFAILED_MASK) != 0;
+
+		_gps_position->rtcm_msg_used  = (_buf.payload_rx_rxm_rtcm.flags & UBX_RX_RXM_RTCM_MSGUSED_MASK) >>
+						UBX_RX_RXM_RTCM_MSGUSED_SHIFT;
 
 		ret = 1;
 		break;
