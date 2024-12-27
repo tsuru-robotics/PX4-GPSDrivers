@@ -507,6 +507,10 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 		return -1;
 	}
 
+	if (!configureMessageRateAndAck(UBX_MSG_RXM_RTCM, 1, true)) {
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -2242,10 +2246,13 @@ GPSDriverUBX::payloadRxDone()
 	case UBX_MSG_RXM_RTCM:
 		UBX_TRACE_RXMSG("Rx RXM-RTCM");
 
-		_gps_position->rtcm_crc_failed = (_buf.payload_rx_rxm_rtcm.flags & UBX_RX_RXM_RTCM_CRCFAILED_MASK) != 0;
+		_gps_position->rtcm_crc_failed_count += (_buf.payload_rx_rxm_rtcm.flags & UBX_RX_RXM_RTCM_CRCFAILED_MASK) != 0;
 
-		_gps_position->rtcm_msg_used  = (_buf.payload_rx_rxm_rtcm.flags & UBX_RX_RXM_RTCM_MSGUSED_MASK) >>
-						UBX_RX_RXM_RTCM_MSGUSED_SHIFT;
+		if (2 == (_buf.payload_rx_rxm_rtcm.flags & UBX_RX_RXM_RTCM_MSGUSED_MASK) >> UBX_RX_RXM_RTCM_MSGUSED_SHIFT) {
+			_gps_position->rtcm_msg_used_count += 1;
+		} else {
+			_gps_position->rtcm_msg_not_used_count += 1;
+		}
 
 		ret = 1;
 		break;
