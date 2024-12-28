@@ -44,7 +44,7 @@
 #include "../../definitions.h"
 
 #ifndef GPS_READ_BUFFER_SIZE
-#define GPS_READ_BUFFER_SIZE 150 ///< buffer size for the read() call. Messages can be longer than that.
+#define GPS_READ_BUFFER_SIZE 512 ///< buffer size for the read() call. Messages can be longer than that.
 #endif
 
 #ifndef M_PI_F

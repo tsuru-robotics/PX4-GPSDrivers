@@ -46,12 +46,13 @@
 
 #include "gps_helper.h"
 #include "../../definitions.h"
-#include "unicore.h"
 
 class RTCMParsing;
 
-#define NMEA_RECV_BUFFER_SIZE 1024
-#define QL_DEFAULT_BAUDRATE 460800
+#define QL_CONFIG_TIMEOUT   500 // ms, timeout for waiting ACK
+#define QL_RECV_BUFFER_SIZE 1024
+
+#define QL_SET_NMEA_OUTPUT_RATE 62
 
 class GPSDriverQL : public GPSHelper
 {
@@ -71,10 +72,6 @@ public:
 
 private:
 	void handleHeading(float heading_deg, float heading_stddev_deg);
-	void request_unicore_heading_message();
-
-	UnicoreParser _unicore_parser;
-	gps_abstime _unicore_heading_received_last;
 
 	enum class NMEADecodeState {
 		uninit,
@@ -93,15 +90,17 @@ private:
 	char read_char();
 
 	/**
-	 * disable_gsv
+	 * config_message_rates
 	 * @return true on success, false on write error (errno set)
 	 */
-	bool disable_gsv();
+	bool config_message_rates();
 
 	/**
 	 * NMEA Checksum
 	 */
 	int calcChecksum(const unsigned char *msg, size_t msg_length, unsigned char* checksum);
+
+	int waitForAck(uint8_t command, const unsigned timeout);
 
 	sensor_gps_s *_gps_position {nullptr};
 	satellite_info_s *_satellite_info {nullptr};
@@ -117,7 +116,7 @@ private:
 	bool _SVINFO_received{false};
 
 	NMEADecodeState _decode_state{NMEADecodeState::uninit};
-	uint8_t _rx_buffer[NMEA_RECV_BUFFER_SIZE] {};
+	uint8_t _rx_buffer[QL_RECV_BUFFER_SIZE] {};
 	uint16_t _rx_buffer_bytes{0};
 
 	uint8_t _ack_command{0};
