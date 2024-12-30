@@ -49,14 +49,10 @@
 
 class RTCMParsing;
 
-#define QL_CONFIG_TIMEOUT   500 // ms, timeout for waiting ACK
-#define QL_RECV_BUFFER_SIZE 1024
-
-#define QL_SET_NMEA_OUTPUT_RATE 62
-
 class GPSDriverQL : public GPSHelper
 {
 public:
+
 	/**
 	 * @param heading_offset heading offset in radians [-pi, pi]. It is substracted from the measurement.
 	 */
@@ -71,6 +67,32 @@ public:
 	int configure(unsigned &baudrate, const GPSConfig &config) override;
 
 private:
+
+	static constexpr unsigned QL_CONFIG_TIMEOUT = 500; // ms, timeout for waiting ACK
+	static constexpr unsigned QL_OUT_MSG_MAX_SIZE = 50;
+	static constexpr unsigned QL_RECV_BUFFER_SIZE = 1024;
+
+	// NMEA messages
+	enum class QlNmeaMsgId {
+		GGA = 0,
+		GLL,
+		GSA,
+		GSV,
+		RMC,
+		VTG,
+		ZDA, // Not supported on LC29H (BA, CA, DA, EA)
+		GRS, // Not supported on LC29H (BA, CA, DA, EA)
+		GST  // Not supported on LC29H (BA, CA, DA, EA)
+	};
+	static constexpr unsigned QL_SET_NMEA_OUTPUT_RATE = 62;
+
+
+	enum class QlPqtmMsgVer {
+		NONE,
+		VER1,
+		VER2
+	};
+
 	void handleHeading(float heading_deg, float heading_stddev_deg);
 
 	enum class NMEADecodeState {
@@ -89,18 +111,19 @@ private:
 	double read_float();
 	char read_char();
 
-	/**
-	 * config_message_rates
-	 * @return true on success, false on write error (errno set)
-	 */
-	bool config_message_rates();
+	bool configMessageRates();
 
-	/**
-	 * NMEA Checksum
-	 */
-	int calcChecksum(const unsigned char *msg, size_t msg_length, unsigned char* checksum);
+	bool setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate);
 
-	int waitForAck(uint8_t command, const unsigned timeout);
+	bool waitForNmeaAck(uint8_t command, unsigned timeout);
+
+	bool setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate, QlPqtmMsgVer msg_ver);
+
+	bool waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout);
+
+	int calcChecksum(const char *msg, size_t msg_length, char* checksum);
+
+	bool writeMessage(char msg[QL_OUT_MSG_MAX_SIZE]);
 
 	sensor_gps_s *_gps_position {nullptr};
 	satellite_info_s *_satellite_info {nullptr};
@@ -119,12 +142,16 @@ private:
 	uint8_t _rx_buffer[QL_RECV_BUFFER_SIZE] {};
 	uint16_t _rx_buffer_bytes{0};
 
-	uint8_t _ack_command{0};
-	uint8_t _ack_result{0};
+	bool _ack_nmea_command{false}; // true - ACK
+	uint8_t _ack_nmea_command_id{0};
+	uint8_t _ack_nmea_command_error_code{0};
+	bool _ack_pqtm_command{false}; // true - ACK
+	uint8_t _ack_pqtm_command_error_code{0};
 
 	OutputMode _output_mode{OutputMode::GPS};
 
 	RTCMParsing *_rtcm_parsing{nullptr};
 
 	float _heading_offset;
+
 };
