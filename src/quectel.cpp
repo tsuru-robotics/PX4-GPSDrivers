@@ -61,7 +61,7 @@
 
 /**** Warning macros, disable to save memory */
 #define QL_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define QL_DEBUG(...)        {GPS_INFO(__VA_ARGS__);}
+#define QL_DEBUG(...)        {/*GPS_INFO(__VA_ARGS__);*/}
 
 // PQTM messages
 static constexpr char QL_PQTM_MSG_NAME_GEOFENCESTATUS[] {"PQTMGEOFENCESTATUS"};
