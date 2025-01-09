@@ -134,6 +134,8 @@ private:
 	bool _clock_set {false};
 
 	//  check if we got all basic essential packages we need
+	bool _waiting_for_ACK{false};
+	bool _ACK_received{false};
 	bool _POS_received{false};
 	bool _VEL_received{false};
 	bool _SVINFO_received{false};

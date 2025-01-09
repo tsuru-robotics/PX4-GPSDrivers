@@ -215,7 +215,7 @@ int GPSDriverQL::handleMessage(int len)
 			_gps_position->fix_type = 3 + fix_quality - 1;
 		}
 
-		QL_DEBUG("Received GGA");
+		QL_DEBUG("Handled GGA");
 
 	} else if ((memcmp(_rx_buffer + 3, "GSV,", 4) == 0)) {
 		/*
@@ -309,7 +309,7 @@ int GPSDriverQL::handleMessage(int len)
 			}
 		}
 
-		QL_DEBUG("Received GSV");
+		QL_DEBUG("Handled GSV");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMPVT,", 9) == 0) && (uiCalcComma >= 19)) {
 		/*
@@ -468,7 +468,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->timestamp = gps_absolute_time();
 		_last_timestamp_time = gps_absolute_time();
 
-		QL_DEBUG("Received PQTMPVT");
+		QL_DEBUG("Handled PQTMPVT");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMVEL,", 9) == 0) && (uiCalcComma >= 11)) {
 		/*
@@ -540,7 +540,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->timestamp = gps_absolute_time();
 		_last_timestamp_time = gps_absolute_time();
 
-		QL_DEBUG("Received PQTMVEL");
+		QL_DEBUG("Handled PQTMVEL");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMEPE,", 9) == 0) && (uiCalcComma >= 6)) {
 		/*
@@ -569,7 +569,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->eph = epe_2d;
 		_gps_position->epv = epe_down;
 
-		QL_DEBUG("Received PQTMEPE");
+		QL_DEBUG("Handled PQTMEPE");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMDOP,", 9) == 0) && (uiCalcComma >= 9)) {
 		/*
@@ -601,7 +601,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->hdop = hdop;
 		_gps_position->vdop = vdop;
 
-		QL_DEBUG("Received PQTMDOP");
+		QL_DEBUG("Handled PQTMDOP");
 
 	} else if ((memcmp(_rx_buffer, "$PAIRSPF5,", 10) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -623,7 +623,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->timestamp = gps_absolute_time();
 		_last_timestamp_time = gps_absolute_time();
 
-		QL_DEBUG("Received PAIRSPF5");
+		QL_DEBUG("Handled PAIRSPF5");
 
 	}  else if ((memcmp(_rx_buffer, "$PAIRSPF,", 9) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -645,7 +645,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->timestamp = gps_absolute_time();
 		_last_timestamp_time = gps_absolute_time();
 
-		QL_DEBUG("Received PAIRSPF");
+		QL_DEBUG("Handled PAIRSPF");
 
 	} else if ((memcmp(_rx_buffer, "$PAIR001,", 9) == 0) && (uiCalcComma == 2)) {
 		/*
@@ -668,8 +668,9 @@ int GPSDriverQL::handleMessage(int len)
 			_ack_nmea_command = false;
 			_ack_nmea_command_error_code = result;
 		}
+		_ACK_received = true;
 
-		QL_DEBUG("Received PAIR001");
+		QL_DEBUG("Handled PAIR001");
 
 	}else if ((memcmp(_rx_buffer, "$PQTMCFGMSGRATE,OK", 18) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -679,8 +680,9 @@ int GPSDriverQL::handleMessage(int len)
 
 		_ack_pqtm_command = true;
 		_ack_pqtm_command_error_code = 0;
+		_ACK_received = true;
 
-		QL_DEBUG("Received PQTMCFGMSGRATE,OK");
+		QL_DEBUG("Handled PQTMCFGMSGRATE,OK");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMCFGMSGRATE,ERROR,", 22) == 0) && (uiCalcComma == 2)) {
 		/*
@@ -694,23 +696,32 @@ int GPSDriverQL::handleMessage(int len)
 		bufptr = (char *)(_rx_buffer + 22);
 
 		if (bufptr && *(++bufptr) != ',') { _ack_pqtm_command_error_code = strtol(bufptr, &endp, 10); bufptr = endp; }
+		_ACK_received = true;
 
-		QL_DEBUG("Received PQTMCFGMSGRATE,ERROR");
+		QL_DEBUG("Handled PQTMCFGMSGRATE,ERROR");
 	}
 
-	if (_VEL_received && _POS_received) {
-		ret = 1;
-		_gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
-		_clock_set = false;
-		_VEL_received = false;
-		_POS_received = false;
-		_rate_count_vel++;
-		_rate_count_lat_lon++;
-	}
+	if (_waiting_for_ACK) {
+		if (_ACK_received) {
+			ret = 1;
+			_ACK_received = false;
+		}
 
-	if (_SVINFO_received) {
-		ret = 2;
-		_SVINFO_received = false;
+	} else {
+		if (_VEL_received && _POS_received) {
+			ret = 1;
+			_gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
+			_clock_set = false;
+			_VEL_received = false;
+			_POS_received = false;
+			_rate_count_vel++;
+			_rate_count_lat_lon++;
+		}
+
+		if (_SVINFO_received) {
+			ret = 2;
+			_SVINFO_received = false;
+		}
 	}
 
 	return ret;
@@ -719,7 +730,7 @@ int GPSDriverQL::handleMessage(int len)
 int	// -1 = error, 0 = no message handled, 1 = message handled, 2 = sat info message handled
 GPSDriverQL::receive(unsigned timeout)
 {
-	QL_DEBUG("Start receive with timeout %u ms", timeout);
+	QL_DEBUG("Start receive with timeout %u ms, waiting for ack = %d", timeout, _waiting_for_ACK);
 	uint8_t buf[GPS_READ_BUFFER_SIZE];
 
 	/* timeout additional to poll */
@@ -748,7 +759,7 @@ GPSDriverQL::receive(unsigned timeout)
 			}
 
 			if (handled > 0) {
-				QL_DEBUG("Received POS & VEL.");
+				QL_DEBUG("Receive finished successfully.");
 				return handled;
 			}
 		}
@@ -881,10 +892,10 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 		// configure message rates
 		bool msg_rates_configured = configMessageRates();
 
-		// receive any valid message
+		// receive valid messages with position and velocity
 		int ret = receive(500);
 
-		if (msg_rates_configured && (ret > 0) && _POS_received && _VEL_received) {
+		if (msg_rates_configured && (ret > 0)) {
 			QL_DEBUG("GPS configured, baudrate=%d", baudrate);
 			return 0;
 		} else {
@@ -938,7 +949,7 @@ GPSDriverQL::configMessageRates()
 		return false;
 	}
 	// Set PQTMPVT rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PVT, 1, QlPqtmMsgVer::VER2)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PVT, 1, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
 	// Set PQTMDOP rate (Output once every N position fix(es))
@@ -946,7 +957,7 @@ GPSDriverQL::configMessageRates()
 		return false;
 	}
 	// Set PQTMVEL rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, 1, QlPqtmMsgVer::NONE)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, 1, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
 	// Disable PQTMPL
@@ -969,7 +980,7 @@ bool
 GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
 {
 	char msg[QL_OUT_MSG_MAX_SIZE] = "";
-	snprintf(msg, sizeof(msg), "$PAIR062,%d,%d*", static_cast<int>(nmea_msg_type), msg_rate);
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR062,%d,%d*", static_cast<int>(nmea_msg_type), msg_rate);
 
 	if (!writeMessage(msg)) {
 		return false;
@@ -981,7 +992,9 @@ GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
 bool
 GPSDriverQL::waitForNmeaAck(uint8_t command_id, unsigned timeout)
 {
+	_waiting_for_ACK = true;
 	receive(timeout);
+	_waiting_for_ACK = false;
 
 	bool res = false;
 	if (_ack_nmea_command_id == command_id) {
@@ -1007,9 +1020,9 @@ GPSDriverQL::setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate,
 {
 	char msg[QL_OUT_MSG_MAX_SIZE] = "";
 	if (msg_ver > QlPqtmMsgVer::NONE) {
-		snprintf(msg, sizeof(msg), "$PQTMCFGMSGRATE,W,%s,%d,%d*", pqtm_msg_name, msg_rate, static_cast<int>(msg_ver));
+		snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGMSGRATE,W,%s,%d,%d*", pqtm_msg_name, msg_rate, static_cast<int>(msg_ver));
 	} else {
-		snprintf(msg, sizeof(msg), "$PQTMCFGMSGRATE,W,%s,%d*", pqtm_msg_name, msg_rate);
+		snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGMSGRATE,W,%s,%d*", pqtm_msg_name, msg_rate);
 	}
 
 	if (!writeMessage(msg)) {
@@ -1022,7 +1035,9 @@ GPSDriverQL::setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate,
 bool
 GPSDriverQL::waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout)
 {
+	_waiting_for_ACK = true;
 	receive(timeout);
+	_waiting_for_ACK = false;
 
 	bool res = false;
 	if (!_ack_pqtm_command) {
@@ -1062,14 +1077,17 @@ GPSDriverQL::writeMessage(char msg[QL_OUT_MSG_MAX_SIZE])
 		QL_WARN("Checksum calculation failed for msg %s", msg);
 		return false;
 	}
-
+	QL_DEBUG("Add to msg %s checksum %s", msg, checksum);
 	strncat(msg, checksum, QL_OUT_MSG_MAX_SIZE - strlen(msg) - 1);
-	strncat(msg, "\r\n",   QL_OUT_MSG_MAX_SIZE - strlen(msg) - 1);
+	QL_DEBUG("Add to msg %s '\r\n'", msg);
+	strncat(msg, "\r\n",    QL_OUT_MSG_MAX_SIZE - strlen(msg) - 1);
 
 	size_t msg_size = strlen(msg);
-	if (write((void *)&msg, msg_size) != (int)msg_size) {
-		QL_WARN("Error writing %s", msg);
+	if (write((void *)msg, msg_size) != (int)msg_size) {
+		QL_WARN("Error writing %s of size %d", msg, msg_size);
 		return false;
+	} else {
+		QL_DEBUG("Written %s of size %d", msg, msg_size);
 	}
 
 	return true;
