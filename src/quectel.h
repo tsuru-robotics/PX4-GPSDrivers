@@ -127,11 +127,7 @@ private:
 
 	sensor_gps_s *_gps_position {nullptr};
 	satellite_info_s *_satellite_info {nullptr};
-	double _last_POS_timeUTC{0};
-	double _last_VEL_timeUTC{0};
 	uint64_t _last_timestamp_time{0};
-
-	bool _clock_set {false};
 
 	//  check if we got all basic essential packages we need
 	bool _waiting_for_ACK{false};

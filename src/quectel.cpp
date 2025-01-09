@@ -215,7 +215,7 @@ int GPSDriverQL::handleMessage(int len)
 			_gps_position->fix_type = 3 + fix_quality - 1;
 		}
 
-		QL_DEBUG("Handled GGA");
+		QL_DEBUG("--handled GGA");
 
 	} else if ((memcmp(_rx_buffer + 3, "GSV,", 4) == 0)) {
 		/*
@@ -272,7 +272,8 @@ int GPSDriverQL::handleMessage(int len)
 
 			if (_satellite_info) {
 				_satellite_info->count = MIN(tot_sv_visible, satellite_info_s::SAT_INFO_MAX_SATELLITES);
-				_satellite_info->timestamp = gps_absolute_time();
+				_gps_position->timestamp = gps_absolute_time();
+				_last_timestamp_time = _gps_position->timestamp;
 			}
 		}
 
@@ -309,7 +310,7 @@ int GPSDriverQL::handleMessage(int len)
 			}
 		}
 
-		QL_DEBUG("Handled GSV");
+		QL_DEBUG("--handled GSV");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMPVT,", 9) == 0) && (uiCalcComma >= 19)) {
 		/*
@@ -377,11 +378,7 @@ int GPSDriverQL::handleMessage(int len)
 		// Position
 		_gps_position->lon = static_cast<int>((int(lon * 10000000)));
 		_gps_position->lat = static_cast<int>((int(lat * 10000000)));
-
-		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
-			_last_POS_timeUTC = utc_time;
-			_POS_received = true;
-		}
+		_POS_received = true;
 
 		// Altitude
 		_gps_position->alt = static_cast<int>(alt * 1000);
@@ -394,11 +391,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->vel_d_m_s = vel_d;
 		/**< Flag to indicate if NED speed is valid */
 		_gps_position->vel_ned_valid = true;
-
-		if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
-			_last_VEL_timeUTC = utc_time;
-			_VEL_received = true;
-		}
+		_VEL_received = true;
 
 		// DOP - do not use DOP from this message since VDOP not present
 		// _gps_position->hdop = hdop;
@@ -447,13 +440,10 @@ int GPSDriverQL::handleMessage(int len)
 			// FMUv2+ boards have a hardware RTC, but GPS helps us to configure it
 			// and control its drift. Since we rely on the HRT for our monotonic
 			// clock, updating it from time to time is safe.
-			if (!_clock_set) {
-				timespec ts{};
-				ts.tv_sec = epoch;
-				ts.tv_nsec = usecs * 1000;
-				setClock(ts);
-				_clock_set = true;
-			}
+			timespec ts{};
+			ts.tv_sec = epoch;
+			ts.tv_nsec = usecs * 1000;
+			setClock(ts);
 
 			_gps_position->time_utc_usec = static_cast<uint64_t>(epoch) * 1000000ULL;
 			_gps_position->time_utc_usec += usecs;
@@ -466,9 +456,9 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->time_utc_usec = 0;
 #endif
 		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
+		_last_timestamp_time = _gps_position->timestamp;
 
-		QL_DEBUG("Handled PQTMPVT");
+		QL_DEBUG("--handled PQTMPVT");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMVEL,", 9) == 0) && (uiCalcComma >= 11)) {
 		/*
@@ -538,9 +528,9 @@ int GPSDriverQL::handleMessage(int len)
 
 		// Should also fill in timestamp for vel according to SensorGps.msg
 		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
+		_last_timestamp_time = _gps_position->timestamp;
 
-		QL_DEBUG("Handled PQTMVEL");
+		QL_DEBUG("--handled PQTMVEL");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMEPE,", 9) == 0) && (uiCalcComma >= 6)) {
 		/*
@@ -569,7 +559,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->eph = epe_2d;
 		_gps_position->epv = epe_down;
 
-		QL_DEBUG("Handled PQTMEPE");
+		QL_DEBUG("--handled PQTMEPE");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMDOP,", 9) == 0) && (uiCalcComma >= 9)) {
 		/*
@@ -601,7 +591,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->hdop = hdop;
 		_gps_position->vdop = vdop;
 
-		QL_DEBUG("Handled PQTMDOP");
+		QL_DEBUG("--handled PQTMDOP");
 
 	} else if ((memcmp(_rx_buffer, "$PAIRSPF5,", 10) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -620,10 +610,8 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { status = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		_gps_position->jamming_l5_state = status;
-		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
 
-		QL_DEBUG("Handled PAIRSPF5");
+		QL_DEBUG("--handled PAIRSPF5");
 
 	}  else if ((memcmp(_rx_buffer, "$PAIRSPF,", 9) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -642,10 +630,8 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { status = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		_gps_position->jamming_l1_state = status;
-		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
 
-		QL_DEBUG("Handled PAIRSPF");
+		QL_DEBUG("--handled PAIRSPF");
 
 	} else if ((memcmp(_rx_buffer, "$PAIR001,", 9) == 0) && (uiCalcComma == 2)) {
 		/*
@@ -670,7 +656,7 @@ int GPSDriverQL::handleMessage(int len)
 		}
 		_ACK_received = true;
 
-		QL_DEBUG("Handled PAIR001");
+		QL_DEBUG("--handled PAIR001");
 
 	}else if ((memcmp(_rx_buffer, "$PQTMCFGMSGRATE,OK", 18) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -682,7 +668,7 @@ int GPSDriverQL::handleMessage(int len)
 		_ack_pqtm_command_error_code = 0;
 		_ACK_received = true;
 
-		QL_DEBUG("Handled PQTMCFGMSGRATE,OK");
+		QL_DEBUG("--handled PQTMCFGMSGRATE,OK");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMCFGMSGRATE,ERROR,", 22) == 0) && (uiCalcComma == 2)) {
 		/*
@@ -698,7 +684,7 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { _ack_pqtm_command_error_code = strtol(bufptr, &endp, 10); bufptr = endp; }
 		_ACK_received = true;
 
-		QL_DEBUG("Handled PQTMCFGMSGRATE,ERROR");
+		QL_DEBUG("--handled PQTMCFGMSGRATE,ERROR");
 	}
 
 	if (_waiting_for_ACK) {
@@ -708,20 +694,29 @@ int GPSDriverQL::handleMessage(int len)
 		}
 
 	} else {
-		if (_VEL_received && _POS_received) {
+
+		if (_POS_received && _VEL_received) {
 			ret = 1;
-			_gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
-			_clock_set = false;
-			_VEL_received = false;
+		}
+
+		if (_POS_received) {
 			_POS_received = false;
-			_rate_count_vel++;
 			_rate_count_lat_lon++;
+		}
+
+		if (_VEL_received) {
+			_VEL_received  = false;
+			_rate_count_vel++;
 		}
 
 		if (_SVINFO_received) {
 			ret = 2;
 			_SVINFO_received = false;
 		}
+	}
+
+	if (ret > 0) {
+		_gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
 	}
 
 	return ret;
@@ -761,6 +756,8 @@ GPSDriverQL::receive(unsigned timeout)
 			if (handled > 0) {
 				QL_DEBUG("Receive finished successfully.");
 				return handled;
+			}else {
+				QL_DEBUG("--handle res=%d ", handled);
 			}
 		}
 
@@ -1084,10 +1081,10 @@ GPSDriverQL::writeMessage(char msg[QL_OUT_MSG_MAX_SIZE])
 
 	size_t msg_size = strlen(msg);
 	if (write((void *)msg, msg_size) != (int)msg_size) {
-		QL_WARN("Error writing %s of size %d", msg, msg_size);
+		QL_WARN("Error writing %s of size %d", msg, (unsigned)msg_size);
 		return false;
 	} else {
-		QL_DEBUG("Written %s of size %d", msg, msg_size);
+		QL_DEBUG("Written %s of size %d", msg, (unsigned)msg_size);
 	}
 
 	return true;
