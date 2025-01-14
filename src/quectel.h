@@ -111,7 +111,7 @@ private:
 	double read_float();
 	char read_char();
 
-	bool configMessageRates();
+	bool configMessageRates(const QlMsgRates &rates);
 
 	bool setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate);
 

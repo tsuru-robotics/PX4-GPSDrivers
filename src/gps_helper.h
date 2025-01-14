@@ -195,10 +195,18 @@ public:
 		I2C_OUT_PROT_RTCM3X = 1 << 5
 	};
 
+	struct QlMsgRates{
+			uint8_t GGA;
+			uint8_t PQTMVEL;
+			uint8_t PQTMEPE;
+			uint8_t PQTMDOP;
+		};
+
 	struct GPSConfig {
 		OutputMode output_mode;
 		GNSSSystemsMask gnss_systems;
 		InterfaceProtocolsMask interface_protocols;
+		QlMsgRates quectel_msg_rates;
 	};
 
 

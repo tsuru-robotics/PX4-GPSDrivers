@@ -872,7 +872,7 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 	_output_mode = config.output_mode;
 
 	if (_output_mode != OutputMode::GPS) {
-		QL_WARN("RTCM output have to be configured manually");
+		QL_WARN("RTCM output has to be configured manually");
 	}
 
 	// If a baudrate is defined, we test this first
@@ -887,7 +887,7 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 		decodeInit();
 
 		// configure message rates
-		bool msg_rates_configured = configMessageRates();
+		bool msg_rates_configured = configMessageRates(config.quectel_msg_rates);
 
 		// receive valid messages with position and velocity
 		int ret = receive(500);
@@ -906,14 +906,14 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 }
 
 bool
-GPSDriverQL::configMessageRates()
+GPSDriverQL::configMessageRates(const QlMsgRates &rates)
 {
-	// Set GGA rate 1Hz
-	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GGA, 1)) {
+	// Set GGA rate (Output once every N position fix(es))
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GGA, rates.GGA)) {
 		QL_WARN("Failed configuring GGA rate");
 		return false;
 	}
-	// Set GSV rate 1 Hz (optional)
+	// Set GSV rate (optional), output once every position fix)
 	unsigned gsv_rate = (_satellite_info) ? 1 : 0;
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GSV, gsv_rate)) {
 		QL_WARN("Failed configuring GSV rate");
@@ -941,20 +941,20 @@ GPSDriverQL::configMessageRates()
 		return false;
 	}
 
-	// Set PQTMEPE rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_EPE, 1, QlPqtmMsgVer::VER2)) {
-		return false;
-	}
-	// Set PQTMPVT rate (Output once every N position fix(es))
+	// Set PQTMPVT rate (Output once every position fix)
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PVT, 1, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
+	// Set PQTMEPE rate (Output once every N position fix(es))
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_EPE, rates.PQTMEPE, QlPqtmMsgVer::VER2)) {
+		return false;
+	}
 	// Set PQTMDOP rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_DOP, 1, QlPqtmMsgVer::VER1)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_DOP, rates.PQTMDOP, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
 	// Set PQTMVEL rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, 1, QlPqtmMsgVer::VER1)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, rates.PQTMVEL, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
 	// Disable PQTMPL
