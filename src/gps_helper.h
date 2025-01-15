@@ -44,7 +44,7 @@
 #include "../../definitions.h"
 
 #ifndef GPS_READ_BUFFER_SIZE
-#define GPS_READ_BUFFER_SIZE 150 ///< buffer size for the read() call. Messages can be longer than that.
+#define GPS_READ_BUFFER_SIZE 512 ///< buffer size for the read() call. Messages can be longer than that.
 #endif
 
 #ifndef M_PI_F
@@ -195,10 +195,18 @@ public:
 		I2C_OUT_PROT_RTCM3X = 1 << 5
 	};
 
+	struct QlMsgRates{
+			uint8_t GGA;
+			uint8_t PQTMVEL;
+			uint8_t PQTMEPE;
+			uint8_t PQTMDOP;
+		};
+
 	struct GPSConfig {
 		OutputMode output_mode;
 		GNSSSystemsMask gnss_systems;
 		InterfaceProtocolsMask interface_protocols;
+		QlMsgRates quectel_msg_rates;
 	};
 
 

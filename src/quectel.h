@@ -46,16 +46,13 @@
 
 #include "gps_helper.h"
 #include "../../definitions.h"
-#include "unicore.h"
 
 class RTCMParsing;
-
-#define NMEA_RECV_BUFFER_SIZE 1024
-#define NMEA_DEFAULT_BAUDRATE 115200
 
 class GPSDriverQL : public GPSHelper
 {
 public:
+
 	/**
 	 * @param heading_offset heading offset in radians [-pi, pi]. It is substracted from the measurement.
 	 */
@@ -70,11 +67,33 @@ public:
 	int configure(unsigned &baudrate, const GPSConfig &config) override;
 
 private:
-	void handleHeading(float heading_deg, float heading_stddev_deg);
-	void request_unicore_heading_message();
 
-	UnicoreParser _unicore_parser;
-	gps_abstime _unicore_heading_received_last;
+	static constexpr unsigned QL_CONFIG_TIMEOUT = 500; // ms, timeout for waiting ACK
+	static constexpr unsigned QL_OUT_MSG_MAX_SIZE = 50;
+	static constexpr unsigned QL_RECV_BUFFER_SIZE = 1024;
+
+	// NMEA messages
+	enum class QlNmeaMsgId {
+		GGA = 0,
+		GLL,
+		GSA,
+		GSV,
+		RMC,
+		VTG,
+		ZDA, // Not supported on LC29H (BA, CA, DA, EA)
+		GRS, // Not supported on LC29H (BA, CA, DA, EA)
+		GST  // Not supported on LC29H (BA, CA, DA, EA)
+	};
+	static constexpr unsigned QL_SET_NMEA_OUTPUT_RATE = 62;
+
+
+	enum class QlPqtmMsgVer {
+		NONE,
+		VER1,
+		VER2
+	};
+
+	void handleHeading(float heading_deg, float heading_stddev_deg);
 
 	enum class NMEADecodeState {
 		uninit,
@@ -92,26 +111,45 @@ private:
 	double read_float();
 	char read_char();
 
+	bool configMessageRates(const QlMsgRates &rates);
+
+	bool setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate);
+
+	bool waitForNmeaAck(uint8_t command, unsigned timeout);
+
+	bool setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate, QlPqtmMsgVer msg_ver);
+
+	bool waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout);
+
+	int calcChecksum(const char *msg, size_t msg_length, char* checksum);
+
+	bool writeMessage(char msg[QL_OUT_MSG_MAX_SIZE]);
+
 	sensor_gps_s *_gps_position {nullptr};
 	satellite_info_s *_satellite_info {nullptr};
-	double _last_POS_timeUTC{0};
-	double _last_VEL_timeUTC{0};
 	uint64_t _last_timestamp_time{0};
 
-	bool _clock_set {false};
-
 	//  check if we got all basic essential packages we need
+	bool _waiting_for_ACK{false};
+	bool _ACK_received{false};
 	bool _POS_received{false};
 	bool _VEL_received{false};
 	bool _SVINFO_received{false};
 
 	NMEADecodeState _decode_state{NMEADecodeState::uninit};
-	uint8_t _rx_buffer[NMEA_RECV_BUFFER_SIZE] {};
+	uint8_t _rx_buffer[QL_RECV_BUFFER_SIZE] {};
 	uint16_t _rx_buffer_bytes{0};
+
+	bool _ack_nmea_command{false}; // true - ACK
+	uint8_t _ack_nmea_command_id{0};
+	uint8_t _ack_nmea_command_error_code{0};
+	bool _ack_pqtm_command{false}; // true - ACK
+	uint8_t _ack_pqtm_command_error_code{0};
 
 	OutputMode _output_mode{OutputMode::GPS};
 
 	RTCMParsing *_rtcm_parsing{nullptr};
 
 	float _heading_offset;
+
 };

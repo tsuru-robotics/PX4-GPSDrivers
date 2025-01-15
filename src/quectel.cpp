@@ -57,11 +57,20 @@
 
 #define MIN(X,Y)              ((X) < (Y) ? (X) : (Y))
 #define MAX(X,Y)    ((X) > (Y) ? (X) : (Y))
-#define NMEA_UNUSED(x) (void)x;
+#define QL_UNUSED(x) (void)x;
 
 /**** Warning macros, disable to save memory */
-#define NMEA_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define NMEA_DEBUG(...)        {/*GPS_INFO(__VA_ARGS__);*/}
+#define QL_WARN(...)         {GPS_WARN(__VA_ARGS__);}
+#define QL_DEBUG(...)        {/*GPS_INFO(__VA_ARGS__);*/}
+
+// PQTM messages
+static constexpr char QL_PQTM_MSG_NAME_GEOFENCESTATUS[] {"PQTMGEOFENCESTATUS"};
+static constexpr char QL_PQTM_MSG_NAME_EPE[] {"PQTMEPE"};
+static constexpr char QL_PQTM_MSG_NAME_PVT[] {"PQTMPVT"};
+static constexpr char QL_PQTM_MSG_NAME_PL[]  {"PQTMPL"};
+static constexpr char QL_PQTM_MSG_NAME_DOP[] {"PQTMDOP"};
+static constexpr char QL_PQTM_MSG_NAME_VEL[] {"PQTMVEL"};
+static constexpr char QL_PQTM_MSG_NAME_ODO[] {"PQTMODO"};
 
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
@@ -146,14 +155,14 @@ int GPSDriverQL::handleMessage(int len)
 		int  num_of_sv = 0, fix_quality = 0;
 		char ns = '?', ew = '?';
 
-		NMEA_UNUSED(dgps_age);
-		NMEA_UNUSED(utc_time);
-		NMEA_UNUSED(alt);
-		NMEA_UNUSED(lat);
-		NMEA_UNUSED(lon);
-		NMEA_UNUSED(geoid_h);
-		NMEA_UNUSED(hdop);
-		NMEA_UNUSED(num_of_sv);
+		QL_UNUSED(dgps_age);
+		QL_UNUSED(utc_time);
+		QL_UNUSED(alt);
+		QL_UNUSED(lat);
+		QL_UNUSED(lon);
+		QL_UNUSED(geoid_h);
+		QL_UNUSED(hdop);
+		QL_UNUSED(num_of_sv);
 
 		if (bufptr && *(++bufptr) != ',') { utc_time = strtod(bufptr, &endp); bufptr = endp; }
 
@@ -206,6 +215,8 @@ int GPSDriverQL::handleMessage(int len)
 			_gps_position->fix_type = 3 + fix_quality - 1;
 		}
 
+		QL_DEBUG("--handled GGA");
+
 	} else if ((memcmp(_rx_buffer + 3, "GSV,", 4) == 0)) {
 		/*
 		The GSV message string identifies the number of SVs in view, the PRN numbers, elevations, azimuths, and SNR values. An example of the GSV message string is:
@@ -243,7 +254,7 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { tot_sv_visible = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		if ((this_page_num < 1) || (this_page_num > all_page_num)) {
-			NMEA_WARN("GSV parse error. this_page_num not valid");
+			QL_WARN("GSV parse error. this_page_num not valid");
 			return 0;
 		}
 
@@ -261,22 +272,23 @@ int GPSDriverQL::handleMessage(int len)
 
 			if (_satellite_info) {
 				_satellite_info->count = MIN(tot_sv_visible, satellite_info_s::SAT_INFO_MAX_SATELLITES);
-				_satellite_info->timestamp = gps_absolute_time();
+				_gps_position->timestamp = gps_absolute_time();
+				_last_timestamp_time = _gps_position->timestamp;
 			}
 		}
 
 		if (_satellite_info) {
 			if ((end < 0) || (end > 4)) {
-				NMEA_WARN("GSV parse error. amount of satellites not valid");
+				QL_WARN("GSV parse error. amount of satellites not valid");
 				return 0;
 			}
-			NMEA_DEBUG("GSV: parsing page %d/%d containig %d satellites info", this_page_num, all_page_num, end);
+			QL_DEBUG("GSV: parsing page %d/%d containig %d satellites info", this_page_num, all_page_num, end);
 			for (int y = 0 ; y < end ; y++) {
 
 				int sat_index = y + (this_page_num - 1) * 4;
 
 				if ((sat_index < 0) || (sat_index > satellite_info_s::SAT_INFO_MAX_SATELLITES)) {
-					NMEA_WARN("GSV parse error. sat_index %d not valid", sat_index);
+					QL_WARN("GSV parse error. sat_index %d not valid", sat_index);
 					return 0;
 				}
 
@@ -294,9 +306,11 @@ int GPSDriverQL::handleMessage(int len)
 				_satellite_info->elevation[sat_index] = sat[y].elevation;
 				_satellite_info->azimuth[sat_index]   = sat[y].azimuth;
 
-				NMEA_DEBUG("GSV: added satellite id %d to satellite_info[%d]", sat[y].svid, sat_index);
+				QL_DEBUG("GSV: added satellite id %d to satellite_info[%d]", sat[y].svid, sat_index);
 			}
 		}
+
+		QL_DEBUG("--handled GSV");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMPVT,", 9) == 0) && (uiCalcComma >= 19)) {
 		/*
@@ -364,11 +378,7 @@ int GPSDriverQL::handleMessage(int len)
 		// Position
 		_gps_position->lon = static_cast<int>((int(lon * 10000000)));
 		_gps_position->lat = static_cast<int>((int(lat * 10000000)));
-
-		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
-			_last_POS_timeUTC = utc_time;
-			_POS_received = true;
-		}
+		_POS_received = true;
 
 		// Altitude
 		_gps_position->alt = static_cast<int>(alt * 1000);
@@ -381,11 +391,7 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->vel_d_m_s = vel_d;
 		/**< Flag to indicate if NED speed is valid */
 		_gps_position->vel_ned_valid = true;
-
-		if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
-			_last_VEL_timeUTC = utc_time;
-			_VEL_received = true;
-		}
+		_VEL_received = true;
 
 		// DOP - do not use DOP from this message since VDOP not present
 		// _gps_position->hdop = hdop;
@@ -434,13 +440,10 @@ int GPSDriverQL::handleMessage(int len)
 			// FMUv2+ boards have a hardware RTC, but GPS helps us to configure it
 			// and control its drift. Since we rely on the HRT for our monotonic
 			// clock, updating it from time to time is safe.
-			if (!_clock_set) {
-				timespec ts{};
-				ts.tv_sec = epoch;
-				ts.tv_nsec = usecs * 1000;
-				setClock(ts);
-				_clock_set = true;
-			}
+			timespec ts{};
+			ts.tv_sec = epoch;
+			ts.tv_nsec = usecs * 1000;
+			setClock(ts);
 
 			_gps_position->time_utc_usec = static_cast<uint64_t>(epoch) * 1000000ULL;
 			_gps_position->time_utc_usec += usecs;
@@ -452,19 +455,10 @@ int GPSDriverQL::handleMessage(int len)
 #else
 		_gps_position->time_utc_usec = 0;
 #endif
-
-		if (!_POS_received && (_last_POS_timeUTC < utc_time)) {
-			_last_POS_timeUTC = utc_time;
-			_POS_received = true;
-		}
-
-		if (!_VEL_received && (_last_VEL_timeUTC < utc_time)) {
-			_last_VEL_timeUTC = utc_time;
-			_VEL_received = true;
-		}
-
 		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
+		_last_timestamp_time = _gps_position->timestamp;
+
+		QL_DEBUG("--handled PQTMPVT");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMVEL,", 9) == 0) && (uiCalcComma >= 11)) {
 		/*
@@ -534,7 +528,9 @@ int GPSDriverQL::handleMessage(int len)
 
 		// Should also fill in timestamp for vel according to SensorGps.msg
 		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
+		_last_timestamp_time = _gps_position->timestamp;
+
+		QL_DEBUG("--handled PQTMVEL");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMEPE,", 9) == 0) && (uiCalcComma >= 6)) {
 		/*
@@ -562,6 +558,8 @@ int GPSDriverQL::handleMessage(int len)
 		// EPH and EPV
 		_gps_position->eph = epe_2d;
 		_gps_position->epv = epe_down;
+
+		QL_DEBUG("--handled PQTMEPE");
 
 	} else if ((memcmp(_rx_buffer, "$PQTMDOP,", 9) == 0) && (uiCalcComma >= 9)) {
 		/*
@@ -593,13 +591,15 @@ int GPSDriverQL::handleMessage(int len)
 		_gps_position->hdop = hdop;
 		_gps_position->vdop = vdop;
 
+		QL_DEBUG("--handled PQTMDOP");
+
 	} else if ((memcmp(_rx_buffer, "$PAIRSPF5,", 10) == 0) && (uiCalcComma == 1)) {
 		/*
 		$PAIRSPF5,0*66
 
 		Field	Meaning
 		0	Message ID $PAIRSPF
-		1   Jamming status.
+		1   	Jamming status.
 		*/
 
 		uint8_t status = 0;
@@ -610,8 +610,8 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { status = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		_gps_position->jamming_l5_state = status;
-		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
+
+		QL_DEBUG("--handled PAIRSPF5");
 
 	}  else if ((memcmp(_rx_buffer, "$PAIRSPF,", 9) == 0) && (uiCalcComma == 1)) {
 		/*
@@ -619,7 +619,7 @@ int GPSDriverQL::handleMessage(int len)
 
 		Field	Meaning
 		0	Message ID $PAIRSPF
-		1   Jamming status.
+		1  	Jamming status.
 		*/
 
 		uint8_t status = 0;
@@ -630,23 +630,93 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { status = strtol(bufptr, &endp, 10); bufptr = endp; }
 
 		_gps_position->jamming_l1_state = status;
-		_gps_position->timestamp = gps_absolute_time();
-		_last_timestamp_time = gps_absolute_time();
+
+		QL_DEBUG("--handled PAIRSPF");
+
+	} else if ((memcmp(_rx_buffer, "$PAIR001,", 9) == 0) && (uiCalcComma == 2)) {
+		/*
+		PAIR_ACK
+		$PAIR001,<CommandID>,<Result>*<Checksum><CR><LF>
+		*/
+
+		/* Set buffer pointer to data (size of "$PAIR001," == 9)*/
+		bufptr = (char *)(_rx_buffer + 9);
+
+		uint8_t result = 0;
+		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_id = strtol(bufptr, &endp, 10); bufptr = endp; }
+		if (bufptr && *(++bufptr) != ',') { result = strtol(bufptr, &endp, 10); bufptr = endp; }
+
+		if (result == 0) {
+			_ack_nmea_command = true;
+			_ack_nmea_command_error_code = 0;
+
+		} else {
+			_ack_nmea_command = false;
+			_ack_nmea_command_error_code = result;
+		}
+		_ACK_received = true;
+
+		QL_DEBUG("--handled PAIR001");
+
+	}else if ((memcmp(_rx_buffer, "$PQTMCFGMSGRATE,OK", 18) == 0) && (uiCalcComma == 1)) {
+		/*
+		Response to Set command:
+		$PQTMCFGMSGRATE,OK*<Checksum><CR><LF>
+		*/
+
+		_ack_pqtm_command = true;
+		_ack_pqtm_command_error_code = 0;
+		_ACK_received = true;
+
+		QL_DEBUG("--handled PQTMCFGMSGRATE,OK");
+
+	} else if ((memcmp(_rx_buffer, "$PQTMCFGMSGRATE,ERROR,", 22) == 0) && (uiCalcComma == 2)) {
+		/*
+		Response to Set command:
+		$PQTMCFGMSGRATE,ERROR,<ErrCode>*<Checksum><CR><LF>
+		*/
+
+		_ack_pqtm_command = false;
+
+		/* Set buffer pointer to ErrCode*/
+		bufptr = (char *)(_rx_buffer + 22);
+
+		if (bufptr && *(++bufptr) != ',') { _ack_pqtm_command_error_code = strtol(bufptr, &endp, 10); bufptr = endp; }
+		_ACK_received = true;
+
+		QL_DEBUG("--handled PQTMCFGMSGRATE,ERROR");
 	}
 
-	if (_VEL_received && _POS_received) {
-		ret = 1;
+	if (_waiting_for_ACK) {
+		if (_ACK_received) {
+			ret = 1;
+			_ACK_received = false;
+		}
+
+	} else {
+
+		if (_POS_received && _VEL_received) {
+			ret = 1;
+		}
+
+		if (_POS_received) {
+			_POS_received = false;
+			_rate_count_lat_lon++;
+		}
+
+		if (_VEL_received) {
+			_VEL_received  = false;
+			_rate_count_vel++;
+		}
+
+		if (_SVINFO_received) {
+			ret = 2;
+			_SVINFO_received = false;
+		}
+	}
+
+	if (ret > 0) {
 		_gps_position->timestamp_time_relative = (int32_t)(_last_timestamp_time - _gps_position->timestamp);
-		_clock_set = false;
-		_VEL_received = false;
-		_POS_received = false;
-		_rate_count_vel++;
-		_rate_count_lat_lon++;
-	}
-
-	if (_SVINFO_received) {
-		ret = 2;
-		_SVINFO_received = false;
 	}
 
 	return ret;
@@ -655,6 +725,7 @@ int GPSDriverQL::handleMessage(int len)
 int	// -1 = error, 0 = no message handled, 1 = message handled, 2 = sat info message handled
 GPSDriverQL::receive(unsigned timeout)
 {
+	QL_DEBUG("Start receive with timeout %u ms, waiting for ack = %d", timeout, _waiting_for_ACK);
 	uint8_t buf[GPS_READ_BUFFER_SIZE];
 
 	/* timeout additional to poll */
@@ -664,104 +735,45 @@ GPSDriverQL::receive(unsigned timeout)
 
 	while (true) {
 		int ret = read(buf, sizeof(buf), timeout);
+		QL_DEBUG("--read %d bytes", ret);
 
 		if (ret < 0) {
 			/* something went wrong when polling or reading */
-			NMEA_WARN("poll_or_read err");
+			QL_WARN("Receive poll or read err");
 			return -1;
 
 		} else if (ret != 0) {
 
 			/* pass received bytes to the packet decoder */
 			for (int i = 0; i < ret; i++) {
-				int l = parseChar(buf[i]);
+				int parsed_msg_length = parseChar(buf[i]);
 
-				if (l > 0) {
-					handled |= handleMessage(l);
-				}
-
-				UnicoreParser::Result result = _unicore_parser.parseChar(buf[i]);
-
-				if (result == UnicoreParser::Result::GotHeading) {
-					++handled;
-					_unicore_heading_received_last = gps_absolute_time();
-
-					// Unicore seems to publish heading and standard deviation of 0
-					// to signal that it has not initialized the heading yet.
-					if (_unicore_parser.heading().heading_stddev_deg > 0.0f) {
-						// Unicore publishes the heading between True North and
-						// the baseline vector from master antenna to slave
-						// antenna.
-						// Assuming that the master is in front and the slave
-						// in the back, this means that we need to flip the
-						// heading 180 degrees.
-
-						handleHeading(
-							_unicore_parser.heading().heading_deg + 180.0f,
-							_unicore_parser.heading().heading_stddev_deg);
-					}
-
-					NMEA_DEBUG("Got heading: %.1f deg, stddev: %.1f deg, baseline: %.2f m\n",
-						   (double)_unicore_parser.heading().heading_deg,
-						   (double)_unicore_parser.heading().heading_stddev_deg,
-						   (double)_unicore_parser.heading().baseline_m);
-
-				} else if (result == UnicoreParser::Result::GotAgrica) {
-					++handled;
-
-					// We don't use anything of that message at this point, however, this
-					// allows to determine whether we are talking to a UM982 and hence
-					// request the heading (UNIHEADINGA) message that we actually require.
-
-					if (gps_absolute_time() - _unicore_heading_received_last > 1000000) {
-						request_unicore_heading_message();
-					}
+				if (parsed_msg_length > 0) {
+					handled |= handleMessage(parsed_msg_length);
 				}
 			}
 
 			if (handled > 0) {
+				QL_DEBUG("Receive finished successfully.");
 				return handled;
+			}else {
+				QL_DEBUG("--handle res=%d ", handled);
 			}
 		}
 
 		/* abort after timeout if no useful packets received */
 		if (time_started + timeout * 1000 < gps_absolute_time()) {
+			QL_WARN("Receive timeout!");
 			return -1;
 		}
 	}
-}
-
-void GPSDriverQL::handleHeading(float heading_deg, float heading_stddev_deg)
-{
-	float heading_rad = heading_deg * M_PI_F / 180.0f; // rad in range [0, 2pi]
-	heading_rad -= _heading_offset; // rad in range [-pi, 3pi]
-
-	if (heading_rad > M_PI_F) {
-		heading_rad -= 2.f * M_PI_F; // rad in range [-pi, pi]
-	}
-
-	// We are not publishing heading_offset because it wasn't done in the past,
-	// and the UBX driver doesn't do it either. I'm assuming it would cause the
-	// offset to be applied twice.
-
-	_gps_position->heading = heading_rad;
-
-	const float heading_stddev_rad = heading_stddev_deg * M_PI_F / 180.0f;
-	_gps_position->heading_accuracy = heading_stddev_rad;
-}
-
-void GPSDriverQL::request_unicore_heading_message()
-{
-	// Configure heading message on serial port at 5 Hz. Don't save it though.
-	uint8_t buf[] = "UNIHEADINGA COM1 0.2\r\n";
-	write(buf, sizeof(buf) - 1);
 }
 
 #define HEXDIGIT_CHAR(d) ((char)((d) + (((d) < 0xA) ? '0' : 'A'-0xA)))
 
 int GPSDriverQL::parseChar(uint8_t b)
 {
-	int iRet = 0;
+	int parsed_msg_length = 0;
 
 	switch (_decode_state) {
 	/* First, look for sync1 */
@@ -813,8 +825,12 @@ int GPSDriverQL::parseChar(uint8_t b)
 
 			if ((HEXDIGIT_CHAR(checksum >> 4) == *(_rx_buffer + _rx_buffer_bytes - 2)) &&
 			    (HEXDIGIT_CHAR(checksum & 0x0F) == *(_rx_buffer + _rx_buffer_bytes - 1))) {
-				iRet = _rx_buffer_bytes;
+				parsed_msg_length = _rx_buffer_bytes;
+			} else {
+				QL_WARN("CRC mismatch");
 			}
+
+			QL_DEBUG("--parsed: %.*s", _rx_buffer_bytes, _rx_buffer);
 
 			decodeInit();
 		}
@@ -822,7 +838,7 @@ int GPSDriverQL::parseChar(uint8_t b)
 
 	case NMEADecodeState::decode_rtcm3:
 		if (_rtcm_parsing->addByte(b)) {
-			NMEA_DEBUG("got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
+			QL_DEBUG("got RTCM message with length %i", (int)_rtcm_parsing->messageLength());
 			gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
 			decodeInit();
 		}
@@ -830,7 +846,7 @@ int GPSDriverQL::parseChar(uint8_t b)
 		break;
 	}
 
-	return iRet;
+	return parsed_msg_length;
 }
 
 void GPSDriverQL::decodeInit()
@@ -851,51 +867,225 @@ void GPSDriverQL::decodeInit()
 
 int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 {
+	QL_DEBUG("Configuring GPS ...");
+
 	_output_mode = config.output_mode;
 
 	if (_output_mode != OutputMode::GPS) {
-		NMEA_WARN("RTCM output have to be configured manually");
+		QL_WARN("RTCM output has to be configured manually");
 	}
 
 	// If a baudrate is defined, we test this first
 	if (baudrate > 0) {
+
+		QL_DEBUG("--baudrate set to %i", baudrate);
 		setBaudrate(baudrate);
+
+		/* flush input and wait for at least 20 ms silence */
 		decodeInit();
-		int ret = receive(400);
-		gps_usleep(2000);
-
-		// If a valid POS message is received we have GPS
-		if (_POS_received || ret > 0) {
-			return 0;
-		}
-	}
-
-	// If we haven't found the GPS with the defined baudrate, we try other rates
-	const unsigned baudrates_to_try[] = {9600, 19200, 38400, 57600, 115200, 230400, 460800};
-	unsigned test_baudrate;
-
-	for (unsigned int baud_i = 0; !_POS_received
-	     && baud_i < sizeof(baudrates_to_try) / sizeof(baudrates_to_try[0]); baud_i++) {
-
-		test_baudrate = baudrates_to_try[baud_i];
-		setBaudrate(test_baudrate);
-
-		NMEA_DEBUG("baudrate set to %i", test_baudrate);
-
+		receive(20);
 		decodeInit();
-		int ret = receive(400);
-		gps_usleep(2000);
 
-		// If a valid POS message is received we have GPS
-		if (_POS_received || ret > 0) {
+		// configure message rates
+		bool msg_rates_configured = configMessageRates(config.quectel_msg_rates);
+
+		// receive valid messages with position and velocity
+		int ret = receive(500);
+
+		if (msg_rates_configured && (ret > 0)) {
+			QL_DEBUG("GPS configured, baudrate=%d", baudrate);
 			return 0;
+		} else {
+			QL_WARN("GPS configure failed");
+			return -1;
 		}
+	} else {
+		QL_WARN("GPS baudrate not defined");
+		return -1;
+	}
+}
+
+bool
+GPSDriverQL::configMessageRates(const QlMsgRates &rates)
+{
+	// Set GGA rate (Output once every N position fix(es))
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GGA, rates.GGA)) {
+		QL_WARN("Failed configuring GGA rate");
+		return false;
+	}
+	// Set GSV rate (optional), output once every position fix)
+	unsigned gsv_rate = (_satellite_info) ? 1 : 0;
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GSV, gsv_rate)) {
+		QL_WARN("Failed configuring GSV rate");
+		return false;
 	}
 
-	// If nothing is found we leave the specified or default
-	if (baudrate > 0) {
-		return setBaudrate(baudrate);
+	// Disable GLL
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GLL, 0)) {
+		QL_WARN("Failed configuring GLL rate");
+		return false;
+	}
+	// Disable GSA
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GSA, 0)) {
+		QL_WARN("Failed configuring GSA rate");
+		return false;
+	}
+	// Disable RMC
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::RMC, 0)) {
+		QL_WARN("Failed configuring RMC rate");
+		return false;
+	}
+	// Disable VTG
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::VTG, 0)) {
+		QL_WARN("Failed configuring VTG rate");
+		return false;
 	}
 
-	return setBaudrate(NMEA_DEFAULT_BAUDRATE);
+	// Set PQTMPVT rate (Output once every position fix)
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PVT, 1, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+	// Set PQTMEPE rate (Output once every N position fix(es))
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_EPE, rates.PQTMEPE, QlPqtmMsgVer::VER2)) {
+		return false;
+	}
+	// Set PQTMDOP rate (Output once every N position fix(es))
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_DOP, rates.PQTMDOP, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+	// Set PQTMVEL rate (Output once every N position fix(es))
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, rates.PQTMVEL, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+	// Disable PQTMPL
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PL, 0, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+	// Disable PQTMGEOFENCESTATUS
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_GEOFENCESTATUS, 0, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+	// Disable PQTMODO
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_ODO, 0, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+
+	return true;
+}
+
+bool
+GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR062,%d,%d*", static_cast<int>(nmea_msg_type), msg_rate);
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	return waitForNmeaAck(QL_SET_NMEA_OUTPUT_RATE, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::waitForNmeaAck(uint8_t command_id, unsigned timeout)
+{
+	_waiting_for_ACK = true;
+	receive(timeout);
+	_waiting_for_ACK = false;
+
+	bool res = false;
+	if (_ack_nmea_command_id == command_id) {
+		if (!_ack_nmea_command) {
+			QL_WARN("Received NAK for command %d, error code=%d", command_id, _ack_nmea_command_error_code);
+		} else {
+			res = true;
+		}
+
+		_ack_nmea_command_id = 0;
+		_ack_nmea_command = false;
+		_ack_nmea_command_error_code = 0;
+
+	} else {
+		QL_WARN("Timeout waiting ACK for command %d", command_id);
+	}
+
+	return res;
+}
+
+bool
+GPSDriverQL::setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate, QlPqtmMsgVer msg_ver)
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	if (msg_ver > QlPqtmMsgVer::NONE) {
+		snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGMSGRATE,W,%s,%d,%d*", pqtm_msg_name, msg_rate, static_cast<int>(msg_ver));
+	} else {
+		snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGMSGRATE,W,%s,%d*", pqtm_msg_name, msg_rate);
+	}
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	return waitForPqtmAck(msg, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout)
+{
+	_waiting_for_ACK = true;
+	receive(timeout);
+	_waiting_for_ACK = false;
+
+	bool res = false;
+	if (!_ack_pqtm_command) {
+		QL_WARN("Received NAK (error code %d) for command %s", _ack_pqtm_command_error_code, msg);
+	} else {
+		res = true;
+	}
+
+	_ack_pqtm_command = false;
+	_ack_pqtm_command_error_code = 0;
+
+	return res;
+}
+
+int GPSDriverQL::calcChecksum(const char *msg, size_t msg_length, char* checksum)
+{
+	unsigned char sum = 0;
+
+	if((nullptr == msg) || (msg_length < 1)) {
+		return -1;
+	}
+
+	for(size_t i = 1; (i < msg_length) && (msg[i] != '\0') && (msg[i] != '*'); i++) { // Skip the '$'
+		sum ^= msg[i];
+	}
+
+	snprintf(checksum, 3, "%02X", sum);
+
+	return 0;
+}
+
+bool
+GPSDriverQL::writeMessage(char msg[QL_OUT_MSG_MAX_SIZE])
+{
+	char checksum[3] = "";
+	if (calcChecksum(msg, strlen(msg), checksum) < 0) {
+		QL_WARN("Checksum calculation failed for msg %s", msg);
+		return false;
+	}
+	QL_DEBUG("Add to msg %s checksum %s", msg, checksum);
+	strncat(msg, checksum, QL_OUT_MSG_MAX_SIZE - strlen(msg) - 1);
+	QL_DEBUG("Add to msg %s '\r\n'", msg);
+	strncat(msg, "\r\n",    QL_OUT_MSG_MAX_SIZE - strlen(msg) - 1);
+
+	size_t msg_size = strlen(msg);
+	if (write((void *)msg, msg_size) != (int)msg_size) {
+		QL_WARN("Error writing %s of size %d", msg, (unsigned)msg_size);
+		return false;
+	} else {
+		QL_DEBUG("Written %s of size %d", msg, (unsigned)msg_size);
+	}
+
+	return true;
 }
