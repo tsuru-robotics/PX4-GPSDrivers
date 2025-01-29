@@ -207,6 +207,8 @@ public:
 		GNSSSystemsMask gnss_systems;
 		InterfaceProtocolsMask interface_protocols;
 		QlMsgRates quectel_msg_rates;
+		bool ubx_enable_rxm_messages;
+		uint8_t ubx_dgnss_mode;
 	};
 
 

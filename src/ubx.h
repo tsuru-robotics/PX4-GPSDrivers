@@ -969,8 +969,7 @@ public:
 		     uint8_t dynamic_model = 7,
 		     float heading_offset = 0.f,
 		     int32_t uart2_baudrate = 57600,
-		     UBXMode mode = UBXMode::Normal,
-		     uint8_t dgnss_mode = 3); /* RTK Fixed */
+		     UBXMode mode = UBXMode::Normal);
 
 	virtual ~GPSDriverUBX();
 
@@ -1032,10 +1031,10 @@ private:
 	int configureDevice(const GPSConfig &config, const int32_t uart2_baudrate);
 	/**
 	 * Send configuration values and desired message rates (for protocol version < 27)
-	 * @param gnssSystems Set of GNSS systems to use
+	 * @param config Configuration
 	 * @return 0 on success, <0 on error
 	 */
-	int configureDevicePreV27(const GNSSSystemsMask &gnssSystems);
+	int configureDevicePreV27(const GPSConfig &config);
 
 	/**
 	 * Add a configuration value to _buf and increase the message size msg_size as needed
@@ -1091,7 +1090,7 @@ private:
 	/**
 	 * DGNSS conﬁguration for M8P
 	 */
-	int configureDgnssM8P();
+	int configureDgnssM8P(const uint8_t dgnss_mode);
 
 	/**
 	 * Parse the binary UBX packet
@@ -1165,7 +1164,6 @@ private:
 	const UBXMode _mode;
 	const float _heading_offset;
 	const int32_t _uart2_baudrate;
-	const uint8_t _dgnss_mode;
 };
 
 

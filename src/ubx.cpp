@@ -65,11 +65,11 @@
 
 /**** Warning macros, disable to save memory */
 #define UBX_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define UBX_DEBUG(...)        {/*GPS_WARN(__VA_ARGS__);*/}
+#define UBX_DEBUG(...)        {GPS_WARN(__VA_ARGS__);}
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
-			   float heading_offset, int32_t uart2_baudrate, UBXMode mode, uint8_t dgnss_mode) :
+			   float heading_offset, int32_t uart2_baudrate, UBXMode mode) :
 	GPSBaseStationSupport(callback, callback_user),
 	_interface(gpsInterface),
 	_gps_position(gps_position),
@@ -77,8 +77,7 @@ GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void
 	_dyn_model(dynamic_model),
 	_mode(mode),
 	_heading_offset(heading_offset),
-	_uart2_baudrate(uart2_baudrate),
-	_dgnss_mode(dgnss_mode)
+	_uart2_baudrate(uart2_baudrate)
 {
 	decodeInit();
 }
@@ -323,7 +322,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 		ret = configureDevice(config, _uart2_baudrate);
 
 	} else {
-		ret = configureDevicePreV27(config.gnss_systems);
+		ret = configureDevicePreV27(config);
 	}
 
 	if (ret != 0) {
@@ -346,7 +345,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 }
 
 
-int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
+int GPSDriverUBX::configureDevicePreV27(const GPSConfig &config)
 {
 	/* Send a CFG-RATE message to define update rate */
 	memset(&_buf.payload_tx_cfg_rate, 0, sizeof(_buf.payload_tx_cfg_rate));
@@ -376,13 +375,13 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 		return -1;
 	}
 
-	if (configureDgnssM8P() < 0) {
+	if (configureDgnssM8P(config.ubx_dgnss_mode) < 0) {
 		UBX_WARN("DGNSS config failed");
 		return -1;
 	}
 
 	/* configure active GNSS systems (number of channels and used signals taken from U-Center default) */
-	if (static_cast<int32_t>(gnssSystems) != 0) {
+	if (static_cast<int32_t>(config.gnss_systems) != 0) {
 		memset(&_buf.payload_tx_cfg_gnss, 0, sizeof(_buf.payload_tx_cfg_gnss));
 		_buf.payload_tx_cfg_gnss.msgVer = 0x00;
 		_buf.payload_tx_cfg_gnss.numTrkChHw = 0x00;  // read only
@@ -393,7 +392,7 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 		_buf.payload_tx_cfg_gnss.block[0].gnssId = UBX_TX_CFG_GNSS_GNSSID_GPS;
 		_buf.payload_tx_cfg_gnss.block[1].gnssId = UBX_TX_CFG_GNSS_GNSSID_QZSS;
 
-		if (gnssSystems & GNSSSystemsMask::ENABLE_GPS) {
+		if (config.gnss_systems & GNSSSystemsMask::ENABLE_GPS) {
 			UBX_DEBUG("GNSS Systems: Use GPS + QZSS");
 			_buf.payload_tx_cfg_gnss.block[0].resTrkCh = 8;
 			_buf.payload_tx_cfg_gnss.block[0].maxTrkCh = 16;
@@ -405,7 +404,7 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 
 		_buf.payload_tx_cfg_gnss.block[2].gnssId = UBX_TX_CFG_GNSS_GNSSID_SBAS;
 
-		if (gnssSystems & GNSSSystemsMask::ENABLE_SBAS) {
+		if (config.gnss_systems & GNSSSystemsMask::ENABLE_SBAS) {
 			UBX_DEBUG("GNSS Systems: Use SBAS");
 			_buf.payload_tx_cfg_gnss.block[2].resTrkCh = 1;
 			_buf.payload_tx_cfg_gnss.block[2].maxTrkCh = 3;
@@ -414,7 +413,7 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 
 		_buf.payload_tx_cfg_gnss.block[3].gnssId = UBX_TX_CFG_GNSS_GNSSID_GALILEO;
 
-		if (gnssSystems & GNSSSystemsMask::ENABLE_GALILEO) {
+		if (config.gnss_systems & GNSSSystemsMask::ENABLE_GALILEO) {
 			UBX_DEBUG("GNSS Systems: Use Galileo");
 			_buf.payload_tx_cfg_gnss.block[3].resTrkCh = 4;
 			_buf.payload_tx_cfg_gnss.block[3].maxTrkCh = 8;
@@ -423,7 +422,7 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 
 		_buf.payload_tx_cfg_gnss.block[4].gnssId = UBX_TX_CFG_GNSS_GNSSID_BEIDOU;
 
-		if (gnssSystems & GNSSSystemsMask::ENABLE_BEIDOU) {
+		if (config.gnss_systems & GNSSSystemsMask::ENABLE_BEIDOU) {
 			UBX_DEBUG("GNSS Systems: Use BeiDou");
 			_buf.payload_tx_cfg_gnss.block[4].resTrkCh = 8;
 			_buf.payload_tx_cfg_gnss.block[4].maxTrkCh = 16;
@@ -432,7 +431,7 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 
 		_buf.payload_tx_cfg_gnss.block[5].gnssId = UBX_TX_CFG_GNSS_GNSSID_GLONASS;
 
-		if (gnssSystems & GNSSSystemsMask::ENABLE_GLONASS) {
+		if (config.gnss_systems & GNSSSystemsMask::ENABLE_GLONASS) {
 			UBX_DEBUG("GNSS Systems: Use GLONASS");
 			_buf.payload_tx_cfg_gnss.block[5].resTrkCh = 8;
 			_buf.payload_tx_cfg_gnss.block[5].maxTrkCh = 14;
@@ -506,9 +505,19 @@ int GPSDriverUBX::configureDevicePreV27(const GNSSSystemsMask &gnssSystems)
 	if (!configureMessageRateAndAck(UBX_MSG_MON_HW, 1, true)) {
 		return -1;
 	}
+	if (config.ubx_enable_rxm_messages) {
 
-	if (!configureMessageRateAndAck(UBX_MSG_RXM_RTCM, 1, true)) {
-		return -1;
+		if (!configureMessageRateAndAck(UBX_MSG_RXM_RTCM, 1, true)) {
+			return -1;
+		}
+
+		if (!configureMessageRateAndAck(UBX_MSG_RXM_SFRBX, 1, true)) {
+			return -1;
+		}
+
+		if (!configureMessageRateAndAck(UBX_MSG_RXM_RAWX, 1, true)) {
+			return -1;
+		}
 	}
 
 	return 0;
@@ -592,7 +601,7 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 
 	// RTK (optional, as only RTK devices like F9P support it)
 	cfg_valset_msg_size = initCfgValset();
-	cfgValset<uint8_t>(UBX_CFG_KEY_NAVHPG_DGNSSMODE, _dgnss_mode, cfg_valset_msg_size);
+	cfgValset<uint8_t>(UBX_CFG_KEY_NAVHPG_DGNSSMODE, config.ubx_dgnss_mode, cfg_valset_msg_size);
 
 	if (!sendMessage(UBX_MSG_CFG_VALSET, (uint8_t *)&_buf, cfg_valset_msg_size)) {
 		return -1;
@@ -1450,6 +1459,13 @@ GPSDriverUBX::payloadRxInit()
 		} else if (!_configured) {
 			_rx_state = UBX_RXMSG_IGNORE;        // ignore if not _configured
 		}
+
+		break;
+
+	case UBX_MSG_RXM_RAWX:
+	case UBX_MSG_RXM_SFRBX:
+
+		_rx_state = UBX_RXMSG_IGNORE;              // ignore
 
 		break;
 
@@ -2419,10 +2435,10 @@ GPSDriverUBX::configureMessageRateAndAck(uint16_t msg, uint8_t rate, bool report
 }
 
 int
-GPSDriverUBX::configureDgnssM8P()
+GPSDriverUBX::configureDgnssM8P(const uint8_t dgnss_mode)
 {
 	memset(&_buf.payload_tx_cfg_dgnss, 0, sizeof(_buf.payload_tx_cfg_dgnss));
-	_buf.payload_tx_cfg_dgnss.dgnssMode = _dgnss_mode;
+	_buf.payload_tx_cfg_dgnss.dgnssMode = dgnss_mode;
 
 	if (!sendMessage(UBX_MSG_CFG_DGNSS, (uint8_t *)&_buf, sizeof(_buf.payload_tx_cfg_dgnss))) {
 		return -1;
