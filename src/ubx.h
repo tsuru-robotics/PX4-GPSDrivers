@@ -50,8 +50,6 @@
 #pragma once
 
 #include "base_station.h"
-#include "gps_helper.h"
-#include "../../definitions.h"
 
 
 #define UBX_CONFIG_TIMEOUT    250 // ms, timeout for waiting ACK
@@ -82,6 +80,8 @@
 #define UBX_ID_NAV_SOL        0x06
 #define UBX_ID_NAV_PVT        0x07
 #define UBX_ID_NAV_VELNED     0x12
+#define UBX_ID_NAV_HPPOSLLH   0x14
+#define UBX_ID_NAV_TIMEGPS    0x20
 #define UBX_ID_NAV_TIMEUTC    0x21
 #define UBX_ID_NAV_SVINFO     0x30
 #define UBX_ID_NAV_SAT        0x35
@@ -90,7 +90,7 @@
 #define UBX_ID_NAV_RELPOSNED  0x3C
 #define UBX_ID_RXM_SFRBX      0x13
 #define UBX_ID_RXM_RAWX       0x15
-#define UBX_ID_RXM_RTCM	      0x32
+#define UBX_ID_RXM_RTCM       0x32
 #define UBX_ID_INF_DEBUG      0x04
 #define UBX_ID_INF_ERROR      0x00
 #define UBX_ID_INF_NOTICE     0x02
@@ -136,7 +136,9 @@
 #define UBX_MSG_NAV_DOP       ((UBX_CLASS_NAV) | UBX_ID_NAV_DOP << 8)
 #define UBX_MSG_NAV_PVT       ((UBX_CLASS_NAV) | UBX_ID_NAV_PVT << 8)
 #define UBX_MSG_NAV_VELNED    ((UBX_CLASS_NAV) | UBX_ID_NAV_VELNED << 8)
+#define UBX_MSG_NAV_HPPOSLLH  ((UBX_CLASS_NAV) | UBX_ID_NAV_HPPOSLLH << 8)
 #define UBX_MSG_NAV_TIMEUTC   ((UBX_CLASS_NAV) | UBX_ID_NAV_TIMEUTC << 8)
+#define UBX_MSG_NAV_TIMEGPS   ((UBX_CLASS_NAV) | UBX_ID_NAV_TIMEGPS << 8)
 #define UBX_MSG_NAV_SVINFO    ((UBX_CLASS_NAV) | UBX_ID_NAV_SVINFO << 8)
 #define UBX_MSG_NAV_SAT       ((UBX_CLASS_NAV) | UBX_ID_NAV_SAT << 8)
 #define UBX_MSG_NAV_STATUS    ((UBX_CLASS_NAV) | UBX_ID_NAV_STATUS << 8)
@@ -358,6 +360,7 @@
 #define UBX_CFG_KEY_MSGOUT_UBX_NAV_STATUS_I2C    0x2091001a
 #define UBX_CFG_KEY_MSGOUT_UBX_NAV_DOP_I2C       0x20910038
 #define UBX_CFG_KEY_MSGOUT_UBX_NAV_PVT_I2C       0x20910006
+#define UBX_CFG_KEY_MSGOUT_UBX_NAV_HPPOSLLH_I2C  0x20910033
 #define UBX_CFG_KEY_MSGOUT_UBX_NAV_RELPOSNED_I2C 0x2091008d
 #define UBX_CFG_KEY_MSGOUT_UBX_RXM_SFRBX_I2C     0x20910231
 #define UBX_CFG_KEY_MSGOUT_UBX_RXM_RAWX_I2C      0x209102a4
@@ -368,9 +371,7 @@
 #define UBX_CFG_KEY_MSGOUT_RTCM_3X_TYPE1097_I2C  0x20910318
 #define UBX_CFG_KEY_MSGOUT_RTCM_3X_TYPE1127_I2C  0x209102d6
 #define UBX_CFG_KEY_MSGOUT_RTCM_3X_TYPE1230_I2C  0x20910303
-
-#define UBX_CFG_KEY_MSGOUT_UBX_NAV_RELPOSNED_UART1 0x2091008e
-#define UBX_CFG_KEY_MSGOUT_UBX_NAV_RELPOSNED_UART2 0x2091008f
+#define UBX_CFG_KEY_MSGOUT_UBX_NAV_TIMEGPS_I2C	 0x20910047
 
 #define UBX_CFG_KEY_MSGOUT_RTCM_3X_TYPE4072_0_UART1  0x209102ff
 #define UBX_CFG_KEY_MSGOUT_RTCM_3X_TYPE4072_1_UART1  0x20910382
@@ -402,21 +403,29 @@
 #define UBX_CFG_KEY_SIGNAL_GPS_ENA              0x1031001f  /**< GPS enable */
 #define UBX_CFG_KEY_SIGNAL_GPS_L1CA_ENA         0x10310001  /**< GPS L1C/A */
 #define UBX_CFG_KEY_SIGNAL_GPS_L2C_ENA          0x10310003  /**< GPS L2C (only on u-blox F9 platform products) */
+#define UBX_CFG_KEY_SIGNAL_GPS_L5_ENA           0x10310004  /**< GPS L5 (only on u-blox F9-15B) */
 #define UBX_CFG_KEY_SIGNAL_SBAS_ENA             0x10310020  /**< SBAS enable */
 #define UBX_CFG_KEY_SIGNAL_SBAS_L1CA_ENA        0x10310005  /**< SBAS L1C/A */
 #define UBX_CFG_KEY_SIGNAL_GAL_ENA              0x10310021  /**< Galileo enable */
 #define UBX_CFG_KEY_SIGNAL_GAL_E1_ENA           0x10310007  /**< Galileo E1 */
 #define UBX_CFG_KEY_SIGNAL_GAL_E5B_ENA          0x1031000a  /**< Galileo E5b (only on u-blox F9 platform products) */
+#define UBX_CFG_KEY_SIGNAL_GAL_E5A_ENA          0x10310009  /**< Galileo E5a (only on u-blox F9-15B) */
 #define UBX_CFG_KEY_SIGNAL_BDS_ENA              0x10310022  /**< BeiDou Enable */
 #define UBX_CFG_KEY_SIGNAL_BDS_B1_ENA           0x1031000d  /**< BeiDou B1I */
+#define UBX_CFG_KEY_SIGNAL_BDS_B2A_ENA          0x10310028  /**< BeiDou B2a  (only on u-blox F9-15B) */
 #define UBX_CFG_KEY_SIGNAL_BDS_B2_ENA           0x1031000e  /**< BeiDou B2I (only on u-blox F9 platform products) */
 #define UBX_CFG_KEY_SIGNAL_QZSS_ENA             0x10310024  /**< QZSS enable */
 #define UBX_CFG_KEY_SIGNAL_QZSS_L1CA_ENA        0x10310012  /**< QZSS L1C/A */
 #define UBX_CFG_KEY_SIGNAL_QZSS_L1S_ENA         0x10310014  /**< QZSS L1S */
+#define UBX_CFG_KEY_SIGNAL_QZSS_L5_ENA          0x10310017  /**< QZSS L5 (only on u-blox F9-15B) */
 #define UBX_CFG_KEY_SIGNAL_QZSS_L2C_ENA         0x10310015  /**< QZSS L2C (only on u-blox F9 platform products) */
 #define UBX_CFG_KEY_SIGNAL_GLO_ENA              0x10310025  /**< GLONASS enable */
 #define UBX_CFG_KEY_SIGNAL_GLO_L1_ENA           0x10310018  /**< GLONASS L1 */
 #define UBX_CFG_KEY_SIGNAL_GLO_L2_ENA           0x1031001a  /**< GLONASS L2 (only on u-blox F9 platform products) */
+#define UBX_CFG_KEY_SIGNAL_NAVIC_ENA            0x10310026  /**< NavIC enable (only on u-blox F9-15B)*/
+#define UBX_CFG_KEY_SIGNAL_NAVIC_L5_ENA         0x1031001d  /**< NavIC L5 (only on u-blox F9-15B) */
+
+#define UBX_CFG_KEY_SIGNAL_L5_HEALTH_OVERRIDE   0x10320001  /**< GPS L5 health override value */
 
 #define UBX_PAYLOAD_RX_NAV_PVT_SIZE_UBX7        (sizeof(ubx_payload_rx_nav_pvt_t) - 8)
 #define UBX_PAYLOAD_RX_NAV_PVT_SIZE_UBX8        (sizeof(ubx_payload_rx_nav_pvt_t))
@@ -665,6 +674,10 @@ typedef struct {
 	uint32_t pullL;
 } ubx_payload_rx_mon_hw_ubx7_t;
 
+typedef struct {
+	uint8_t reserved0[56];
+} ubx_payload_rx_mon_hw_deprecated_t;
+
 /* Rx MON-RF (replaces MON-HW, protocol 27+) */
 typedef struct {
 	uint8_t version;
@@ -882,10 +895,29 @@ typedef struct {
 	uint32_t    flags;
 } ubx_payload_rx_nav_relposned_t;
 
+/* NAV HPPOSLLH (protocol version 27+) */
+typedef struct {
+	uint8_t     version;         /**< message version (expected 0x00) */
+	uint8_t     reserved1[2];
+	int8_t      flags;           /**<  invalidLlh: 1 = Invalid lon, lat, height, hMSL, lonHp, latHp, heightHp and hMSLHp */
+	uint32_t    iTOW;            /**<  [ms] GPS time of week of the navigation epoch */
+	int32_t     lon;             /**<  [1e-7 deg] Longitude */
+	int32_t     lat;             /**<  [1e-7 deg] Latitude */
+	int32_t     height;          /**<  [mm] Height above Ellipsoid */
+	int32_t     hMSL;            /**<  [mm] Height above mean sea level */
+	int8_t      lonHp;           /**<  [1e-9 deg] Longitude high precision component, -99 to +99 */
+	int8_t      latHp;           /**<  [1e-9 deg] Latitude high precision component, -99 to +99 */
+	int8_t      heightHp;        /**<  [0.1 mm] high precision component of height above Ellipsoid, -9 to +9 */
+	int8_t      hMSLHp;          /**<  [0.1 mm] high precision component of height above mean sea level, -9 to +9 */
+	uint32_t    hAcc;            /**<  [0.1 mm] Horizontal Accuracy Estimate */
+	uint32_t    vAcc;            /**<  [0.1 mm] Vertical Accuracy Estimate */
+} ubx_payload_rx_nav_hpposllh_t;
+
 /* General message and payload buffer union */
 typedef union {
 	ubx_payload_rx_nav_pvt_t          payload_rx_nav_pvt;
 	ubx_payload_rx_nav_posllh_t       payload_rx_nav_posllh;
+	ubx_payload_rx_nav_hpposllh_t     payload_rx_nav_hpposllh;
 	ubx_payload_rx_nav_sol_t          payload_rx_nav_sol;
 	ubx_payload_rx_nav_dop_t          payload_rx_nav_dop;
 	ubx_payload_rx_nav_timeutc_t      payload_rx_nav_timeutc;
@@ -898,10 +930,11 @@ typedef union {
 	ubx_payload_rx_nav_velned_t       payload_rx_nav_velned;
 	ubx_payload_rx_mon_hw_ubx6_t      payload_rx_mon_hw_ubx6;
 	ubx_payload_rx_mon_hw_ubx7_t      payload_rx_mon_hw_ubx7;
+	ubx_payload_rx_mon_hw_deprecated_t ubx_payload_rx_mon_hw_deprecated;
 	ubx_payload_rx_mon_rf_t           payload_rx_mon_rf;
 	ubx_payload_rx_mon_ver_part1_t    payload_rx_mon_ver_part1;
 	ubx_payload_rx_mon_ver_part2_t    payload_rx_mon_ver_part2;
-	ubx_payload_rx_rxm_rtcm_t	  payload_rx_rxm_rtcm;
+	ubx_payload_rx_rxm_rtcm_t         payload_rx_rxm_rtcm;
 	ubx_payload_rx_ack_ack_t          payload_rx_ack_ack;
 	ubx_payload_rx_ack_nak_t          payload_rx_ack_nak;
 	ubx_payload_tx_cfg_prt_t          payload_tx_cfg_prt;
@@ -987,16 +1020,14 @@ public:
 		u_blox7 = 7,
 		u_blox8 = 8, ///< M8N or M8P
 		u_blox9 = 9, ///< M9N, or any F9*, except F9P
-		u_blox9_F9P = 10, ///< F9P
+		u_blox9_F9P_L1L2 = 10, ///< F9P
 		u_blox10 = 11,
+		u_blox9_F9P_L1L5 = 12, ///< ZED-F9P-15B
 	};
 
 	const Board &board() const { return _board; }
 
 private:
-
-private:
-
 	int activateRTCMOutput(bool reduce_update_rate);
 
 	/**

@@ -85,6 +85,7 @@ int GPSDriverAshtech::handleMessage(int len)
 	int ret = 0;
 
 	if ((memcmp(_rx_buffer + 3, "ZDA,", 3) == 0) && (uiCalcComma == 6)) {
+#ifndef NO_MKTIME
 		/*
 		UTC day, month, and year, and local time zone offset
 		An example of the ZDA message string is:
@@ -120,7 +121,6 @@ int GPSDriverAshtech::handleMessage(int len)
 
 		if (bufptr && *(++bufptr) != ',') { local_time_off_min = strtol(bufptr, &endp, 10); bufptr = endp; }
 
-
 		int ashtech_hour = static_cast<int>(ashtech_time / 10000);
 		int ashtech_minute = static_cast<int>((ashtech_time - ashtech_hour * 10000) / 100);
 		double ashtech_sec = static_cast<double>(ashtech_time - ashtech_hour * 10000 - ashtech_minute * 100);
@@ -137,7 +137,6 @@ int GPSDriverAshtech::handleMessage(int len)
 		timeinfo.tm_sec = int(ashtech_sec);
 		timeinfo.tm_isdst = 0;
 
-#ifndef NO_MKTIME
 		time_t epoch = mktime(&timeinfo);
 
 		if (epoch > GPS_EPOCH_SECS) {
@@ -241,9 +240,10 @@ int GPSDriverAshtech::handleMessage(int len)
 		}
 
 		/* convert from degrees, minutes and seconds to degrees * 1e7 */
-		_gps_position->lat = static_cast<int>((int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000);
-		_gps_position->lon = static_cast<int>((int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000);
-		_gps_position->alt = static_cast<int>(alt * 1000);
+		_gps_position->latitude_deg = static_cast<int>(lat * 0.01) + (lat * 0.01 - static_cast<int>(lat * 0.01)) * 100.0 / 60.0;
+		_gps_position->longitude_deg = static_cast<int>(lon * 0.01) + (lon * 0.01 - static_cast<int>
+					       (lon * 0.01)) * 100.0 / 60.0;
+		_gps_position->altitude_msl_m = alt;
 		_rate_count_lat_lon++;
 
 		if (fix_quality <= 0) {
@@ -411,11 +411,10 @@ int GPSDriverAshtech::handleMessage(int len)
 			lon = -lon;
 		}
 
-		_gps_position->lat = static_cast<int>((static_cast<int>(lat * 0.01) + (lat * 0.01 - static_cast<int>(
-				lat * 0.01)) * 100.0 / 60.0) * 10000000);
-		_gps_position->lon = static_cast<int>((static_cast<int>(lon * 0.01) + (lon * 0.01 - static_cast<int>(
-				lon * 0.01)) * 100.0 / 60.0) * 10000000);
-		_gps_position->alt = static_cast<int>(alt * 1000);
+		_gps_position->latitude_deg = static_cast<int>(lat * 0.01) + (lat * 0.01 - static_cast<int>(lat * 0.01)) * 100.0 / 60.0;
+		_gps_position->longitude_deg = static_cast<int>(lon * 0.01) + (lon * 0.01 - static_cast<int>
+					       (lon * 0.01)) * 100.0 / 60.0;
+		_gps_position->altitude_msl_m = alt;
 		_gps_position->hdop = static_cast<float>(hdop);
 		_gps_position->vdop = static_cast<float>(vdop);
 		_rate_count_lat_lon++;

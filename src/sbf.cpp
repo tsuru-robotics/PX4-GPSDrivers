@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2018-2024 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -78,24 +78,30 @@ GPSDriverSBF::~GPSDriverSBF()
 
 int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 {
+	char buf[GPS_READ_BUFFER_SIZE];
+	char msg[MSG_SIZE];
+
 	_configured = false;
 
 	setBaudrate(SBF_TX_CFG_PRT_BAUDRATE);
 	baudrate = SBF_TX_CFG_PRT_BAUDRATE;
 	_output_mode = config.output_mode;
 
-	if (_output_mode != OutputMode::RTCM) {
-		sendMessage(SBF_CONFIG_FORCE_INPUT);
+	// Make sure we can send commands to the receiver
+	sendMessage(SBF_CONFIG_FORCE_INPUT);
+
+	// Disable previous output for now so we can detect the COM port
+	for (int i = 1; i <= 2; i++) {
+		snprintf(msg, sizeof(msg), SBF_CONFIG_DISABLE_OUTPUT, "COM", i);
+		sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT);
 	}
 
-	// flush input and wait for at least 50 ms silence
-	decodeInit();
-	receive(50);
-	decodeInit();
+	for (int i = 1; i <= 4; i++) {
+		snprintf(msg, sizeof(msg), SBF_CONFIG_DISABLE_OUTPUT, "USB", i);
+		sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT);
+	}
 
-	char buf[GPS_READ_BUFFER_SIZE];
 	char com_port[5] {};
-
 	size_t offset = 1;
 	bool response_detected = false;
 	gps_abstime time_started = gps_absolute_time();
@@ -103,19 +109,17 @@ int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 
 	// Read buffer to get the COM port
 	do {
-		--offset; //overwrite the null-char
+		--offset; // overwrite the null-char
 		int ret = read(reinterpret_cast<uint8_t *>(buf) + offset, sizeof(buf) - offset - 1, SBF_CONFIG_TIMEOUT);
 
 		if (ret < 0) {
-			// something went wrong when polling or reading
-			SBF_WARN("sbf poll_or_read err");
+			// something went wrong when reading
+			SBF_WARN("sbf read err");
 			return ret;
-
 		}
 
 		offset += ret;
 		buf[offset++] = '\0';
-
 
 		char *p = strstr(buf, ">");
 
@@ -143,26 +147,21 @@ int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 	}
 
 	// Delete all sbf outputs on current COM port to remove clutter data
-	char msg[MSG_SIZE];
 	snprintf(msg, sizeof(msg), SBF_CONFIG_RESET, com_port);
 
 	if (!sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT)) {
 		return -1; // connection and/or baudrate detection failed
 	}
 
-	// Set baut rate
-	snprintf(msg, sizeof(msg), SBF_CONFIG_BAUDRATE, com_port, baudrate);
+	// Set baudrate, unless we're connected over USB
+	if (strncmp(com_port, "USB1", 4) != 0 && strncmp(com_port, "USB2", 4) != 0) {
+		snprintf(msg, sizeof(msg), SBF_CONFIG_BAUDRATE, com_port, baudrate);
 
-	if (!sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT)) {
-		SBF_DEBUG("Connection and/or baudrate detection failed (SBF_CONFIG_BAUDRATE)");
-		return -1; // connection and/or baudrate detection failed
+		if (!sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT)) {
+			SBF_DEBUG("Connection and/or baudrate detection failed (SBF_CONFIG_BAUDRATE)");
+			return -1; // connection and/or baudrate detection failed
+		}
 	}
-
-	// Flush input and wait for at least 50 ms silence
-	decodeInit();
-	receive(50);
-	decodeInit();
-
 
 	// At this point we have correct baudrate on both ends
 	SBF_DEBUG("Correct baud rate on both ends");
@@ -174,15 +173,16 @@ int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 		return -1;
 	}
 
-	// Specify the offsets that the receiver applies to the computed attitude angles.
-	snprintf(msg, sizeof(msg), SBF_CONFIG_ATTITUDE_OFFSET, (double)(_heading_offset * 180 / M_PI_F), (double)_pitch_offset);
-
-	if (!sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT)) {
-		return -1;
-	}
-
 	// Set the type of dynamics the GNSS antenna is subjected to.
 	if (_output_mode != OutputMode::RTCM) {
+
+		// Specify the offsets that the receiver applies to the computed attitude angles.
+		snprintf(msg, sizeof(msg), SBF_CONFIG_ATTITUDE_OFFSET, (double)(_heading_offset * 180 / M_PI_F), (double)_pitch_offset);
+
+		if (!sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT)) {
+			return -1;
+		}
+
 		if (_dynamic_model < 6) {
 			snprintf(msg, sizeof(msg), SBF_CONFIG_RECEIVER_DYNAMICS, "low");
 
@@ -197,15 +197,13 @@ int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 		}
 
 		sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT);
+
+		snprintf(msg, sizeof(msg), SBF_CONFIG, com_port);
+
+		sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT);
 	}
 
-	decodeInit();
-	receive(50);
-	decodeInit();
-
-	// Output a set of SBF blocks on a given connection at a regular interval.
 	int i = 0;
-	snprintf(msg, sizeof(msg), SBF_CONFIG, com_port);
 
 	do {
 		++i;
@@ -220,8 +218,6 @@ int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 		}
 	} while (i < 5 && !response_detected);
 
-
-
 	if (_output_mode == OutputMode::RTCM) {
 		if (_base_settings.type == BaseSettingsType::fixed_position) {
 			snprintf(msg, sizeof(msg), SBF_CONFIG_RTCM_STATIC_COORDINATES,
@@ -233,6 +229,9 @@ int GPSDriverSBF::configure(unsigned &baudrate, const GPSConfig &config)
 			sendMessageAndWaitForAck(msg, SBF_CONFIG_TIMEOUT);
 			sendMessageAndWaitForAck(SBF_CONFIG_RTCM_STATIC1, SBF_CONFIG_TIMEOUT);
 			sendMessageAndWaitForAck(SBF_CONFIG_RTCM_STATIC2, SBF_CONFIG_TIMEOUT);
+
+		} else {
+			sendMessageAndWaitForAck(SBF_CONFIG_RTCM, SBF_CONFIG_TIMEOUT);
 		}
 	}
 
@@ -274,8 +273,8 @@ bool GPSDriverSBF::sendMessageAndWaitForAck(const char *msg, const int timeout)
 		int ret = read(reinterpret_cast<uint8_t *>(buf) + offset, sizeof(buf) - offset - 1, timeout);
 
 		if (ret < 0) {
-			// something went wrong when polling or reading
-			SBF_WARN("sbf poll_or_read err");
+			// something went wrong when reading
+			SBF_WARN("sbf read err");
 			return false;
 		}
 
@@ -297,29 +296,33 @@ bool GPSDriverSBF::sendMessageAndWaitForAck(const char *msg, const int timeout)
 	return found_response;
 }
 
-// -1 = error, 0 = no message handled, 1 = message handled, 2 = sat info message handled
+// return value:
+// 0b1111_1111 = an error occurred
+// 0b0000_0000 = no message handled (not set up yet)
+// 0b0000_0001 = message handled
+// 0b0000_0010 = sat info message handled
 int GPSDriverSBF::receive(unsigned timeout)
 {
+	int handled = 0;
+	gps_abstime time_started;
+	uint8_t buf[GPS_READ_BUFFER_SIZE];
+
 	// Do not receive messages until we're configured
 	if (!_configured) {
 		gps_usleep(timeout * 1000);
 		return 0;
 	}
 
-	uint8_t buf[GPS_READ_BUFFER_SIZE];
-
-	// timeout additional to poll
-	gps_abstime time_started = gps_absolute_time();
-
-	int handled = 0;
+	// Timeout after not receiving a complete message for a certain time
+	time_started = gps_absolute_time();
 
 	while (true) {
 		// Wait for only SBF_PACKET_TIMEOUT if something already received.
 		int ret = read(buf, sizeof(buf), handled ? SBF_PACKET_TIMEOUT : timeout);
 
 		if (ret < 0) {
-			// something went wrong when polling or reading
-			SBF_WARN("ubx poll_or_read err");
+			// something went wrong when reading
+			SBF_WARN("ubx read err");
 			return -1;
 
 		} else {
@@ -344,7 +347,10 @@ int GPSDriverSBF::receive(unsigned timeout)
 	}
 }
 
-// 0 = decoding, 1 = message handled, 2 = sat info message handled
+// return value:
+// 0b0000_0000 = still decoding
+// 0b0000_0001 = message handled
+// 0b0000_0010 = sat info message handled
 int GPSDriverSBF::parseChar(const uint8_t b)
 {
 	int ret = 0;
@@ -403,9 +409,11 @@ int GPSDriverSBF::parseChar(const uint8_t b)
 
 	case SBF_DECODE_RTCM3:
 		if (_rtcm_parsing->addByte(b)) {
+			// Complete message received
 			SBF_DEBUG("got RTCM message with length %i", (int) _rtcm_parsing->messageLength());
 			gotRTCMMessage(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
 			decodeInit();
+			ret |= 1;
 		}
 
 		break;
@@ -503,7 +511,7 @@ int GPSDriverSBF::payloadRxDone()
 
 		// Check boundaries and invalidate position
 		// We're not just checking for the do-not-use value (-2*10^10) but for any value beyond the specified max values
-		if (fabs(_buf.payload_pvt_geodetic.latitude) > (double) M_PI_2_F ||
+		if (fabs(_buf.payload_pvt_geodetic.latitude) > (double)(M_PI_F / 2.0f) ||
 		    fabs(_buf.payload_pvt_geodetic.longitude) > (double) M_PI_F ||
 		    fabs(_buf.payload_pvt_geodetic.height) > DNU ||
 		    fabsf(_buf.payload_pvt_geodetic.undulation) > (float) DNU) {
@@ -525,11 +533,11 @@ int GPSDriverSBF::payloadRxDone()
 			_gps_position->satellites_used = 0;
 		}
 
-		_gps_position->lat = static_cast<int>(round(_buf.payload_pvt_geodetic.latitude * M_RAD_TO_DEG * 1e7));
-		_gps_position->lon = static_cast<int>(round(_buf.payload_pvt_geodetic.longitude * M_RAD_TO_DEG * 1e7));
-		_gps_position->alt_ellipsoid = static_cast<int>(round(_buf.payload_pvt_geodetic.height * 1000));
-		_gps_position->alt = static_cast<int>(round((_buf.payload_pvt_geodetic.height - static_cast<double>
-						      (_buf.payload_pvt_geodetic.undulation)) * 1000));
+		_gps_position->latitude_deg = _buf.payload_pvt_geodetic.latitude * M_RAD_TO_DEG;
+		_gps_position->longitude_deg = _buf.payload_pvt_geodetic.longitude * M_RAD_TO_DEG;
+		_gps_position->altitude_ellipsoid_m = _buf.payload_pvt_geodetic.height;
+		_gps_position->altitude_msl_m = _buf.payload_pvt_geodetic.height - static_cast<double>
+						(_buf.payload_pvt_geodetic.undulation);
 
 		/* H and V accuracy are reported in 2DRMS, but based off the uBlox reporting we expect RMS.
 		 * Devide by 100 from cm to m and in addition divide by 2 to get RMS. */
