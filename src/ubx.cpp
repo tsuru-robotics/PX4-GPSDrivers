@@ -349,8 +349,8 @@ int GPSDriverUBX::configureDevicePreV27(const GPSConfig &config)
 {
 	/* Send a CFG-RATE message to define update rate */
 	memset(&_buf.payload_tx_cfg_rate, 0, sizeof(_buf.payload_tx_cfg_rate));
-	_buf.payload_tx_cfg_rate.measRate	= UBX_TX_CFG_RATE_MEASINTERVAL;
-	_buf.payload_tx_cfg_rate.navRate	= UBX_TX_CFG_RATE_NAVRATE;
+	_buf.payload_tx_cfg_rate.measRate	= (config.ubx_rate_measinterval >= 50) ? config.ubx_rate_measinterval : UBX_TX_CFG_RATE_MEASINTERVAL;
+	_buf.payload_tx_cfg_rate.navRate	= (config.ubx_rate_navrate >= 1) ? config.ubx_rate_navrate : UBX_TX_CFG_RATE_NAVRATE;
 	_buf.payload_tx_cfg_rate.timeRef	= UBX_TX_CFG_RATE_TIMEREF;
 
 	if (!sendMessage(UBX_MSG_CFG_RATE, (uint8_t *)&_buf, sizeof(_buf.payload_tx_cfg_rate))) {

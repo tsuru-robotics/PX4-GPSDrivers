@@ -208,6 +208,8 @@ public:
 		InterfaceProtocolsMask interface_protocols;
 		QlMsgRates quectel_msg_rates;
 		bool ubx_enable_rxm_messages;
+		uint16_t ubx_rate_measinterval;
+		uint8_t ubx_rate_navrate;
 		uint8_t ubx_dgnss_mode;
 	};
 
