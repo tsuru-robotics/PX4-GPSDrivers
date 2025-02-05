@@ -85,6 +85,7 @@ private:
 		GST  // Not supported on LC29H (BA, CA, DA, EA)
 	};
 	static constexpr unsigned QL_SET_NMEA_OUTPUT_RATE = 62;
+	static constexpr unsigned QL_SET_DEBUGLOG_OUTPUT = 86;
 
 
 	enum class QlPqtmMsgVer {
@@ -111,13 +112,17 @@ private:
 	double read_float();
 	char read_char();
 
-	bool configMessageRates(const QlMsgRates &rates);
+	bool configMessages(const QlMsgConfig &config);
 
 	bool setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate);
+
+	bool setNmeaDebugMode(unsigned mode);
 
 	bool waitForNmeaAck(uint8_t command, unsigned timeout);
 
 	bool setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate, QlPqtmMsgVer msg_ver);
+
+	bool setPqtmDebugMode(unsigned mode);
 
 	bool waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout);
 
