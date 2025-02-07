@@ -155,7 +155,6 @@ int GPSDriverQL::handleMessage(int len)
 		int  num_of_sv = 0, fix_quality = 0;
 		char ns = '?', ew = '?';
 
-		QL_UNUSED(dgps_age);
 		QL_UNUSED(utc_time);
 		QL_UNUSED(alt);
 		QL_UNUSED(lat);
@@ -197,6 +196,8 @@ int GPSDriverQL::handleMessage(int len)
 		if (ew == 'W') {
 			lon = -lon;
 		}
+
+		_gps_position->gga_dgps_age = dgps_age;
 
 		// We only need fix_quality
 		if (fix_quality <= 0) {
