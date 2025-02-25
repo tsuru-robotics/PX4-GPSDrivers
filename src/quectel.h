@@ -32,13 +32,11 @@
  ****************************************************************************/
 
 /**
- * @file nmea.h
+ * @file quectel.h
  *
- * NMEA protocol definitions
+ * Quectel protocol definitions
  *
- * @author WeiPeng Guo <guoweipeng1990@sina.com>
- * @author Stone White <stone@thone.io>
- * @author Jose Jimenez-Berni <berni@ias.csic.es>
+ * @author Vladimir Savelyev <vms@flyfire.io>
  *
  */
 
@@ -155,6 +153,6 @@ private:
 
 	RTCMParsing *_rtcm_parsing{nullptr};
 
-	float _heading_offset;
+	float _epe_multiplier{1.0f}; // multiplier for eph/epv from EPE message
 
 };

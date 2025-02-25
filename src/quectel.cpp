@@ -32,13 +32,11 @@
  ****************************************************************************/
 
 /**
- * @file nmea.cpp
+ * @file quectel.cpp
  *
- * NMEA protocol implementation.
+ * Quectel protocol implementation.
  *
- * @author WeiPeng Guo <guoweipeng1990@sina.com>
- * @author Stone White <stone@thone.io>
- * @author Jose Jimenez-Berni <berni@ias.csic.es>
+ * @author Vladimir Savelyev <vms@flyfire.io>
  *
  */
 
@@ -75,11 +73,11 @@ static constexpr char QL_PQTM_MSG_NAME_ODO[] {"PQTMODO"};
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
 			     satellite_info_s *satellite_info,
-			     float heading_offset):
+			     float epe_multiplier):
 	GPSHelper(callback, callback_user),
 	_gps_position(gps_position),
 	_satellite_info(satellite_info),
-	_heading_offset(heading_offset)
+	_epe_multiplier(epe_multiplier)
 {
 	decodeInit();
 }
@@ -199,7 +197,6 @@ int GPSDriverQL::handleMessage(int len)
 
 		_gps_position->gga_dgps_age = dgps_age;
 
-		// We only need fix_quality
 		if (fix_quality <= 0) {
 			_gps_position->fix_type = 0;
 
@@ -557,8 +554,8 @@ int GPSDriverQL::handleMessage(int len)
 		while (*(++bufptr) != ',') {} //skip EPE_3D
 
 		// EPH and EPV
-		_gps_position->eph = epe_2d;
-		_gps_position->epv = epe_down;
+		_gps_position->eph = epe_2d * _epe_multiplier;
+		_gps_position->epv = epe_down * _epe_multiplier;
 
 		QL_DEBUG("--handled PQTMEPE");
 
