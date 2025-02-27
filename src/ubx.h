@@ -1122,6 +1122,11 @@ private:
 	bool sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length);
 
 	/**
+	 * Write buffer byte by byte
+	 * */
+	int write_byte_by_byte(const void *buf, int buf_length);
+
+	/**
 	 * Wait for message acknowledge
 	 */
 	int waitForAck(const uint16_t msg, const unsigned timeout, const bool report);

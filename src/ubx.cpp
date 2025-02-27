@@ -2469,19 +2469,34 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 	}
 
 	// Send message
-	if (write((void *)&header, sizeof(header)) != sizeof(header)) {
+	if (write_byte_by_byte((void *)&header, sizeof(header)) != sizeof(header)) {
 		return false;
 	}
 
-	if (payload && write((void *)payload, length) != length) {
+	if (payload && write_byte_by_byte((void *)payload, length) != length) {
 		return false;
 	}
 
-	if (write((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
+	if (write_byte_by_byte((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
 		return false;
 	}
 
 	return true;
+}
+
+int
+GPSDriverUBX::write_byte_by_byte(const void *buf, int buf_length)
+{
+	// write bytes from buf byte by byte with a small delay between bytes
+	uint8_t *buf_ptr = (uint8_t *)buf;
+
+	for (int i = 0; i < buf_length; i++) {
+		if (write((void *)&buf_ptr[i], 1) != 1) {
+			return -1;
+		}
+		px4_usleep(1000);  // Small delay between bytes
+	}
+	return buf_length;  // Return the number of bytes written (should be equal to buf_length)
 }
 
 uint32_t
