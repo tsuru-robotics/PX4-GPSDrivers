@@ -69,7 +69,7 @@
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
-			   float heading_offset, int32_t uart2_baudrate, UBXMode mode) :
+			   float heading_offset, int32_t uart2_baudrate, UBXMode mode, uint32_t config_write_delay_us) :
 	GPSBaseStationSupport(callback, callback_user),
 	_interface(gpsInterface),
 	_gps_position(gps_position),
@@ -77,7 +77,8 @@ GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void
 	_dyn_model(dynamic_model),
 	_mode(mode),
 	_heading_offset(heading_offset),
-	_uart2_baudrate(uart2_baudrate)
+	_uart2_baudrate(uart2_baudrate),
+	_config_write_delay_us(config_write_delay_us)
 {
 	decodeInit();
 }
@@ -2469,15 +2470,15 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 	}
 
 	// Send message
-	if (write_byte_by_byte((void *)&header, sizeof(header)) != sizeof(header)) {
+	if (write_with_delay((void *)&header, sizeof(header)) != sizeof(header)) {
 		return false;
 	}
 
-	if (payload && write_byte_by_byte((void *)payload, length) != length) {
+	if (payload && write_with_delay((void *)payload, length) != length) {
 		return false;
 	}
 
-	if (write_byte_by_byte((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
+	if (write_with_delay((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
 		return false;
 	}
 
@@ -2485,7 +2486,7 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 }
 
 int
-GPSDriverUBX::write_byte_by_byte(const void *buf, int buf_length)
+GPSDriverUBX::write_with_delay(const void *buf, int buf_length)
 {
 	// write bytes from buf byte by byte with a small delay between bytes
 	uint8_t *buf_ptr = (uint8_t *)buf;
@@ -2494,7 +2495,7 @@ GPSDriverUBX::write_byte_by_byte(const void *buf, int buf_length)
 		if (write((void *)&buf_ptr[i], 1) != 1) {
 			return -1;
 		}
-		px4_usleep(1000);  // Small delay between bytes
+		px4_usleep(_config_write_delay_us);  // Delay between bytes
 	}
 	return buf_length;  // Return the number of bytes written (should be equal to buf_length)
 }
