@@ -2469,17 +2469,40 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 		calcChecksum(payload, length, &checksum);
 	}
 
-	// Send message
-	if (write_with_delay((void *)&header, sizeof(header)) != sizeof(header)) {
-		return false;
-	}
+	if (_config_write_delay_us > 0) {
+		if (write_with_delay((void *)&header, sizeof(header)) != sizeof(header)) {
+			return false;
+		}
 
-	if (payload && write_with_delay((void *)payload, length) != length) {
-		return false;
-	}
+		if (payload && write_with_delay((void *)payload, length) != length) {
+			return false;
+		}
 
-	if (write_with_delay((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
-		return false;
+		if (write_with_delay((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
+			return false;
+		}
+
+	}else {
+		const int tx_buf_size = sizeof(header) + length + sizeof(checksum);
+
+		if (tx_buf_size > TX_BUFFER_MAX_SIZE) {
+			GPS_ERR("TX buffer size too large: %i > %i", tx_buf_size, TX_BUFFER_MAX_SIZE);
+			return false;
+		}
+
+		// copy header, payload, and checksum into buffer
+		memcpy(_tx_buf, &header, sizeof(header));
+
+		if (payload != nullptr) {
+			memcpy(_tx_buf + sizeof(header), payload, length);
+		}
+
+		memcpy(_tx_buf + sizeof(header) + length, &checksum, sizeof(checksum));
+
+		// Send message
+		if (write((void *)&_tx_buf, tx_buf_size) != tx_buf_size) {
+			return false;
+		}
 	}
 
 	return true;

@@ -54,7 +54,7 @@
 #include "../../definitions.h"
 
 
-#define UBX_CONFIG_TIMEOUT    500 // ms, timeout for waiting ACK
+#define UBX_CONFIG_TIMEOUT    250 // ms, timeout for waiting ACK
 #define UBX_PACKET_TIMEOUT    8   // ms, if now data during this delay assume that full update received
 
 #define DISABLE_MSG_INTERVAL  1000000    // us, try to disable message with this interval
@@ -918,6 +918,21 @@ typedef union {
 	ubx_payload_rx_nav_relposned_t    payload_rx_nav_relposned;
 } ubx_buf_t;
 
+/* TX message and payload buffer union */
+typedef union {
+	ubx_payload_tx_cfg_prt_t          payload_tx_cfg_prt;
+	ubx_payload_tx_cfg_rate_t         payload_tx_cfg_rate;
+	ubx_payload_tx_cfg_nav5_t         payload_tx_cfg_nav5;
+	ubx_payload_tx_cfg_rst_t          payload_tx_cfg_rst;
+	ubx_payload_tx_cfg_sbas_t         payload_tx_cfg_sbas;
+	ubx_payload_tx_cfg_msg_t          payload_tx_cfg_msg;
+	ubx_payload_tx_cfg_dgnss_t        payload_tx_cfg_dgnss;
+	ubx_payload_tx_cfg_tmode3_t       payload_tx_cfg_tmode3;
+	ubx_payload_tx_cfg_cfg_t          payload_tx_cfg_cfg;
+	ubx_payload_tx_cfg_valset_t       payload_tx_cfg_valset;
+	ubx_payload_tx_cfg_gnss_t         payload_tx_cfg_gnss;
+} ubx_tx_payload_t;
+
 #pragma pack(pop)
 /*** END OF u-blox protocol binary message and payload definitions ***/
 
@@ -970,7 +985,7 @@ public:
 		     float heading_offset = 0.f,
 		     int32_t uart2_baudrate = 57600,
 		     UBXMode mode = UBXMode::Normal,
-		     uint32_t config_write_delay_us = 1000);
+		     uint32_t config_write_delay_us = 0);
 
 	virtual ~GPSDriverUBX();
 
@@ -995,7 +1010,8 @@ public:
 
 private:
 
-private:
+	static constexpr int TX_BUFFER_MAX_SIZE = sizeof(ubx_header_t) + sizeof(ubx_tx_payload_t) + sizeof(ubx_checksum_t);
+	uint8_t _tx_buf[TX_BUFFER_MAX_SIZE];
 
 	int activateRTCMOutput(bool reduce_update_rate);
 
