@@ -54,7 +54,7 @@
 #include "../../definitions.h"
 
 
-#define UBX_CONFIG_TIMEOUT    250 // ms, timeout for waiting ACK
+#define UBX_CONFIG_TIMEOUT    1000 // ms, timeout for waiting ACK
 #define UBX_PACKET_TIMEOUT    8   // ms, if now data during this delay assume that full update received
 
 #define DISABLE_MSG_INTERVAL  1000000    // us, try to disable message with this interval
@@ -1010,7 +1010,7 @@ public:
 
 private:
 
-	static constexpr int TX_BUFFER_MAX_SIZE = sizeof(ubx_header_t) + sizeof(ubx_tx_payload_t) + sizeof(ubx_checksum_t);
+	static constexpr int TX_BUFFER_MAX_SIZE = 80; //sizeof(ubx_header_t) + sizeof(ubx_tx_payload_t) + sizeof(ubx_checksum_t);
 	uint8_t _tx_buf[TX_BUFFER_MAX_SIZE];
 
 	int activateRTCMOutput(bool reduce_update_rate);

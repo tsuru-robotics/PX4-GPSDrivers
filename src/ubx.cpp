@@ -60,12 +60,12 @@
 
 /**** Trace macros, disable for production builds */
 #define UBX_TRACE_PARSER(...) {/*GPS_INFO(__VA_ARGS__);*/}    // decoding progress in parse_char()
-#define UBX_TRACE_RXMSG(...)  {/*GPS_INFO(__VA_ARGS__);*/}    // Rx msgs in payload_rx_done()
+#define UBX_TRACE_RXMSG(...)  {GPS_INFO(__VA_ARGS__);}    // Rx msgs in payload_rx_done()
 #define UBX_TRACE_SVINFO(...) {/*GPS_INFO(__VA_ARGS__);*/}    // NAV-SVINFO processing (debug use only, will cause rx buffer overflows)
 
 /**** Warning macros, disable to save memory */
 #define UBX_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define UBX_DEBUG(...)        {/*GPS_WARN(__VA_ARGS__);*/}
+#define UBX_DEBUG(...)        {GPS_WARN(__VA_ARGS__);}
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
@@ -2458,6 +2458,8 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 	ubx_header_t   header = {UBX_SYNC1, UBX_SYNC2, 0, 0};
 	ubx_checksum_t checksum = {0, 0};
 
+	UBX_DEBUG("Sending msg %d", msg);
+
 	// Populate header
 	header.msg	= msg;
 	header.length	= length;
@@ -2503,6 +2505,8 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 		if (write((void *)&_tx_buf, tx_buf_size) != tx_buf_size) {
 			return false;
 		}
+		UBX_DEBUG("Msg %d sent", msg);
+		px4_usleep(5000);  // Small delay
 	}
 
 	return true;
