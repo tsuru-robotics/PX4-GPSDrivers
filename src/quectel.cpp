@@ -32,13 +32,11 @@
  ****************************************************************************/
 
 /**
- * @file nmea.cpp
+ * @file quectel.cpp
  *
- * NMEA protocol implementation.
+ * Quectel protocol implementation.
  *
- * @author WeiPeng Guo <guoweipeng1990@sina.com>
- * @author Stone White <stone@thone.io>
- * @author Jose Jimenez-Berni <berni@ias.csic.es>
+ * @author Vladimir Savelyev <vms@flyfire.io>
  *
  */
 
@@ -75,11 +73,11 @@ static constexpr char QL_PQTM_MSG_NAME_ODO[] {"PQTMODO"};
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
 			     satellite_info_s *satellite_info,
-			     float heading_offset):
+			     float epe_multiplier):
 	GPSHelper(callback, callback_user),
 	_gps_position(gps_position),
 	_satellite_info(satellite_info),
-	_heading_offset(heading_offset)
+	_epe_multiplier(epe_multiplier)
 {
 	decodeInit();
 }
@@ -155,7 +153,6 @@ int GPSDriverQL::handleMessage(int len)
 		int  num_of_sv = 0, fix_quality = 0;
 		char ns = '?', ew = '?';
 
-		QL_UNUSED(dgps_age);
 		QL_UNUSED(utc_time);
 		QL_UNUSED(alt);
 		QL_UNUSED(lat);
@@ -198,7 +195,8 @@ int GPSDriverQL::handleMessage(int len)
 			lon = -lon;
 		}
 
-		// We only need fix_quality
+		_gps_position->gga_dgps_age = dgps_age;
+
 		if (fix_quality <= 0) {
 			_gps_position->fix_type = 0;
 
@@ -556,8 +554,8 @@ int GPSDriverQL::handleMessage(int len)
 		while (*(++bufptr) != ',') {} //skip EPE_3D
 
 		// EPH and EPV
-		_gps_position->eph = epe_2d;
-		_gps_position->epv = epe_down;
+		_gps_position->eph = epe_2d * _epe_multiplier;
+		_gps_position->epv = epe_down * _epe_multiplier;
 
 		QL_DEBUG("--handled PQTMEPE");
 
@@ -685,6 +683,34 @@ int GPSDriverQL::handleMessage(int len)
 		_ACK_received = true;
 
 		QL_DEBUG("--handled PQTMCFGMSGRATE,ERROR");
+
+	} else if ((memcmp(_rx_buffer, "$PQTMDEBUGOFF,OK", 16) == 0) && (uiCalcComma == 1)) {
+		/*
+		Response to Set command:
+		$PQTMCFGMSGRATE,OK*<Checksum><CR><LF>
+		*/
+
+		_ack_pqtm_command = true;
+		_ack_pqtm_command_error_code = 0;
+		_ACK_received = true;
+
+		QL_DEBUG("--handled PQTMDEBUGOFF,OK");
+
+	} else if ((memcmp(_rx_buffer, "$PQTMDEBUGOFF,ERROR,", 20) == 0) && (uiCalcComma == 2)) {
+		/*
+		Response to Set command:
+		$PQTMDEBUGOFF,ERROR,<ErrCode>*<Checksum><CR><LF>
+		*/
+
+		_ack_pqtm_command = false;
+
+		/* Set buffer pointer to ErrCode*/
+		bufptr = (char *)(_rx_buffer + 20);
+
+		if (bufptr && *(++bufptr) != ',') { _ack_pqtm_command_error_code = strtol(bufptr, &endp, 10); bufptr = endp; }
+		_ACK_received = true;
+
+		QL_DEBUG("--handled PQTMDEBUGOFF,ERROR");
 	}
 
 	if (_waiting_for_ACK) {
@@ -886,8 +912,8 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 		receive(20);
 		decodeInit();
 
-		// configure message rates
-		bool msg_rates_configured = configMessageRates(config.quectel_msg_rates);
+		// configure messages
+		bool msg_rates_configured = configMessages(config.quectel_msg_config);
 
 		// receive valid messages with position and velocity
 		int ret = receive(500);
@@ -906,10 +932,10 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 }
 
 bool
-GPSDriverQL::configMessageRates(const QlMsgRates &rates)
+GPSDriverQL::configMessages(const QlMsgConfig &config)
 {
 	// Set GGA rate (Output once every N position fix(es))
-	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GGA, rates.GGA)) {
+	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GGA, config.RateGGA)) {
 		QL_WARN("Failed configuring GGA rate");
 		return false;
 	}
@@ -946,15 +972,15 @@ GPSDriverQL::configMessageRates(const QlMsgRates &rates)
 		return false;
 	}
 	// Set PQTMEPE rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_EPE, rates.PQTMEPE, QlPqtmMsgVer::VER2)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_EPE, config.RatePQTMEPE, QlPqtmMsgVer::VER2)) {
 		return false;
 	}
 	// Set PQTMDOP rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_DOP, rates.PQTMDOP, QlPqtmMsgVer::VER1)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_DOP, config.RatePQTMDOP, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
 	// Set PQTMVEL rate (Output once every N position fix(es))
-	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, rates.PQTMVEL, QlPqtmMsgVer::VER1)) {
+	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, config.RatePQTMVEL, QlPqtmMsgVer::VER1)) {
 		return false;
 	}
 	// Disable PQTMPL
@@ -967,6 +993,16 @@ GPSDriverQL::configMessageRates(const QlMsgRates &rates)
 	}
 	// Disable PQTMODO
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_ODO, 0, QlPqtmMsgVer::VER1)) {
+		return false;
+	}
+
+	// Set PQTM debug logging mode
+	if (!setPqtmDebugMode(config.PQTMDebugMode)) {
+		return false;
+	}
+
+	// Set NMEA debug logging mode
+	if (!setNmeaDebugMode(config.NmeaDebugMode)) {
 		return false;
 	}
 
@@ -984,6 +1020,20 @@ GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
 	}
 
 	return waitForNmeaAck(QL_SET_NMEA_OUTPUT_RATE, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::setNmeaDebugMode(unsigned mode)
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR086,%d*", mode);
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	return waitForNmeaAck(QL_SET_DEBUGLOG_OUTPUT, QL_CONFIG_TIMEOUT);
 }
 
 bool
@@ -1027,6 +1077,24 @@ GPSDriverQL::setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate,
 	}
 
 	return waitForPqtmAck(msg, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::setPqtmDebugMode(unsigned mode)
+{
+	if (mode == 0) {
+		char msg[QL_OUT_MSG_MAX_SIZE] = "";
+
+		snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMDEBUGOFF*");
+
+		if (!writeMessage(msg)) {
+			return false;
+		}
+
+		return waitForPqtmAck(msg, QL_CONFIG_TIMEOUT);
+	} else {
+		return true;
+	}
 }
 
 bool

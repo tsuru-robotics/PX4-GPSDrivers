@@ -195,18 +195,20 @@ public:
 		I2C_OUT_PROT_RTCM3X = 1 << 5
 	};
 
-	struct QlMsgRates{
-			uint8_t GGA;
-			uint8_t PQTMVEL;
-			uint8_t PQTMEPE;
-			uint8_t PQTMDOP;
+	struct QlMsgConfig{
+			bool 	PQTMDebugMode; // 0 = Disable debug logging, 1 = Enable (assumed is enabled by default GNSS settings)
+			uint8_t NmeaDebugMode; // 0 = Disable, 1 = Enable with full debug log output, 2 = Enable with lite debug log output
+			uint8_t RateGGA;
+			uint8_t RatePQTMVEL;
+			uint8_t RatePQTMEPE;
+			uint8_t RatePQTMDOP;
 		};
 
 	struct GPSConfig {
 		OutputMode output_mode;
 		GNSSSystemsMask gnss_systems;
 		InterfaceProtocolsMask interface_protocols;
-		QlMsgRates quectel_msg_rates;
+		QlMsgConfig quectel_msg_config;
 		bool ubx_enable_rxm_messages;
 		uint16_t ubx_rate_measinterval;
 		uint8_t ubx_rate_navrate;
