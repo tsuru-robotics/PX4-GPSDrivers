@@ -54,7 +54,7 @@
 #include "../../definitions.h"
 
 
-#define UBX_CONFIG_TIMEOUT    1000 // ms, timeout for waiting ACK
+#define UBX_CONFIG_TIMEOUT    250 // ms, timeout for waiting ACK
 #define UBX_PACKET_TIMEOUT    8   // ms, if now data during this delay assume that full update received
 
 #define DISABLE_MSG_INTERVAL  1000000    // us, try to disable message with this interval
@@ -984,8 +984,7 @@ public:
 		     uint8_t dynamic_model = 7,
 		     float heading_offset = 0.f,
 		     int32_t uart2_baudrate = 57600,
-		     UBXMode mode = UBXMode::Normal,
-		     uint32_t config_write_delay_us = 0);
+		     UBXMode mode = UBXMode::Normal);
 
 	virtual ~GPSDriverUBX();
 
@@ -1139,11 +1138,6 @@ private:
 	bool sendMessage(const uint16_t msg, const uint8_t *payload, const uint16_t length);
 
 	/**
-	 * Write buffer byte by byte with a small delay between bytes
-	 * */
-	int write_with_delay(const void *buf, int buf_length);
-
-	/**
 	 * Wait for message acknowledge
 	 */
 	int waitForAck(const uint16_t msg, const unsigned timeout, const bool report);
@@ -1186,7 +1180,6 @@ private:
 	const UBXMode _mode;
 	const float _heading_offset;
 	const int32_t _uart2_baudrate;
-	const uint32_t _config_write_delay_us;
 };
 
 

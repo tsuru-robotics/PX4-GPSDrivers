@@ -69,7 +69,7 @@
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
-			   float heading_offset, int32_t uart2_baudrate, UBXMode mode, uint32_t config_write_delay_us) :
+			   float heading_offset, int32_t uart2_baudrate, UBXMode mode) :
 	GPSBaseStationSupport(callback, callback_user),
 	_interface(gpsInterface),
 	_gps_position(gps_position),
@@ -77,8 +77,7 @@ GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void
 	_dyn_model(dynamic_model),
 	_mode(mode),
 	_heading_offset(heading_offset),
-	_uart2_baudrate(uart2_baudrate),
-	_config_write_delay_us(config_write_delay_us)
+	_uart2_baudrate(uart2_baudrate)
 {
 	decodeInit();
 }
@@ -2471,60 +2470,28 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 		calcChecksum(payload, length, &checksum);
 	}
 
-	if (_config_write_delay_us > 0) {
-		if (write_with_delay((void *)&header, sizeof(header)) != sizeof(header)) {
-			return false;
-		}
+	const int tx_buf_size = sizeof(header) + length + sizeof(checksum);
 
-		if (payload && write_with_delay((void *)payload, length) != length) {
-			return false;
-		}
+	if (tx_buf_size > TX_BUFFER_MAX_SIZE) {
+		GPS_ERR("TX buffer size too large: %i > %i", tx_buf_size, TX_BUFFER_MAX_SIZE);
+		return false;
+	}
 
-		if (write_with_delay((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
-			return false;
-		}
+	// copy header, payload, and checksum into buffer
+	memcpy(_tx_buf, &header, sizeof(header));
 
-	}else {
-		const int tx_buf_size = sizeof(header) + length + sizeof(checksum);
+	if (payload != nullptr) {
+		memcpy(_tx_buf + sizeof(header), payload, length);
+	}
 
-		if (tx_buf_size > TX_BUFFER_MAX_SIZE) {
-			GPS_ERR("TX buffer size too large: %i > %i", tx_buf_size, TX_BUFFER_MAX_SIZE);
-			return false;
-		}
+	memcpy(_tx_buf + sizeof(header) + length, &checksum, sizeof(checksum));
 
-		// copy header, payload, and checksum into buffer
-		memcpy(_tx_buf, &header, sizeof(header));
-
-		if (payload != nullptr) {
-			memcpy(_tx_buf + sizeof(header), payload, length);
-		}
-
-		memcpy(_tx_buf + sizeof(header) + length, &checksum, sizeof(checksum));
-
-		// Send message
-		if (write((void *)&_tx_buf, tx_buf_size) != tx_buf_size) {
-			return false;
-		}
-		UBX_DEBUG("Msg %d sent", msg);
-		px4_usleep(5000);  // Small delay
+	// Send message
+	if (write((void *)&_tx_buf, tx_buf_size) != tx_buf_size) {
+		return false;
 	}
 
 	return true;
-}
-
-int
-GPSDriverUBX::write_with_delay(const void *buf, int buf_length)
-{
-	// write bytes from buf byte by byte with a small delay between bytes
-	uint8_t *buf_ptr = (uint8_t *)buf;
-
-	for (int i = 0; i < buf_length; i++) {
-		if (write((void *)&buf_ptr[i], 1) != 1) {
-			return -1;
-		}
-		px4_usleep(_config_write_delay_us);  // Delay between bytes
-	}
-	return buf_length;  // Return the number of bytes written (should be equal to buf_length)
 }
 
 uint32_t
