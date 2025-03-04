@@ -2457,8 +2457,6 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 	ubx_header_t   header = {UBX_SYNC1, UBX_SYNC2, 0, 0};
 	ubx_checksum_t checksum = {0, 0};
 
-	UBX_DEBUG("Sending msg %d", msg);
-
 	// Populate header
 	header.msg	= msg;
 	header.length	= length;
@@ -2471,6 +2469,8 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 	}
 
 	const int tx_buf_size = sizeof(header) + length + sizeof(checksum);
+
+	UBX_DEBUG("Sending msg %d size=%d", msg, tx_buf_size);
 
 	if (tx_buf_size > TX_BUFFER_MAX_SIZE) {
 		GPS_ERR("TX buffer size too large: %i > %i", tx_buf_size, TX_BUFFER_MAX_SIZE);

@@ -54,7 +54,7 @@
 #include "../../definitions.h"
 
 
-#define UBX_CONFIG_TIMEOUT    250 // ms, timeout for waiting ACK
+#define UBX_CONFIG_TIMEOUT    500 // ms, timeout for waiting ACK
 #define UBX_PACKET_TIMEOUT    8   // ms, if now data during this delay assume that full update received
 
 #define DISABLE_MSG_INTERVAL  1000000    // us, try to disable message with this interval
