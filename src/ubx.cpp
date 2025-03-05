@@ -65,7 +65,7 @@
 
 /**** Warning macros, disable to save memory */
 #define UBX_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define UBX_DEBUG(...)        {/*GPS_WARN(__VA_ARGS__);*/}
+#define UBX_DEBUG(...)        {GPS_WARN(__VA_ARGS__);}
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
@@ -2470,8 +2470,6 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 
 	const int tx_buf_size = sizeof(header) + length + sizeof(checksum);
 
-	UBX_DEBUG("Sending msg %d size=%d", msg, tx_buf_size);
-
 	if (tx_buf_size > TX_BUFFER_MAX_SIZE) {
 		UBX_WARN("TX buffer size for msg %d too large: %i > %i", msg, tx_buf_size, TX_BUFFER_MAX_SIZE);
 		return false;
@@ -2488,8 +2486,11 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 
 	// Send message
 	if (write((void *)&_tx_buf, tx_buf_size) != tx_buf_size) {
+		UBX_WARN("Failed sending msg %d size=%d", msg, tx_buf_size);
 		return false;
 	}
+
+	UBX_DEBUG("Sent msg %d size=%d", msg, tx_buf_size);
 
 	return true;
 }
