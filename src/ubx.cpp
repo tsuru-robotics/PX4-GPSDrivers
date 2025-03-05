@@ -60,12 +60,12 @@
 
 /**** Trace macros, disable for production builds */
 #define UBX_TRACE_PARSER(...) {/*GPS_INFO(__VA_ARGS__);*/}    // decoding progress in parse_char()
-#define UBX_TRACE_RXMSG(...)  {GPS_INFO(__VA_ARGS__);}    // Rx msgs in payload_rx_done()
+#define UBX_TRACE_RXMSG(...)  {/*GPS_INFO(__VA_ARGS__);*/}    // Rx msgs in payload_rx_done()
 #define UBX_TRACE_SVINFO(...) {/*GPS_INFO(__VA_ARGS__);*/}    // NAV-SVINFO processing (debug use only, will cause rx buffer overflows)
 
 /**** Warning macros, disable to save memory */
 #define UBX_WARN(...)         {GPS_WARN(__VA_ARGS__);}
-#define UBX_DEBUG(...)        {GPS_WARN(__VA_ARGS__);}
+#define UBX_DEBUG(...)        {/*GPS_WARN(__VA_ARGS__);*/}
 
 GPSDriverUBX::GPSDriverUBX(Interface gpsInterface, GPSCallbackPtr callback, void *callback_user,
 			   sensor_gps_s *gps_position, satellite_info_s *satellite_info, uint8_t dynamic_model,
@@ -2473,7 +2473,7 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 	UBX_DEBUG("Sending msg %d size=%d", msg, tx_buf_size);
 
 	if (tx_buf_size > TX_BUFFER_MAX_SIZE) {
-		GPS_ERR("TX buffer size too large: %i > %i", tx_buf_size, TX_BUFFER_MAX_SIZE);
+		UBX_WARN("TX buffer size for msg %d too large: %i > %i", msg, tx_buf_size, TX_BUFFER_MAX_SIZE);
 		return false;
 	}
 
