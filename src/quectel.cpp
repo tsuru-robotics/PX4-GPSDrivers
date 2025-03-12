@@ -374,13 +374,13 @@ int GPSDriverQL::handleMessage(int len)
 		while (*(++bufptr) != ',') {}
 
 		// Position
-		_gps_position->lon = static_cast<int>((int(lon * 10000000)));
-		_gps_position->lat = static_cast<int>((int(lat * 10000000)));
+		_gps_position->longitude_deg = lon;
+		_gps_position->latitude_deg = lat;
 		_POS_received = true;
 
 		// Altitude
-		_gps_position->alt = static_cast<int>(alt * 1000);
-		_gps_position->alt_ellipsoid = static_cast<int>((alt + sep) * 1000);
+		_gps_position->altitude_msl_m = alt;
+		_gps_position->altitude_ellipsoid_m = alt + sep;
 
 		// Velocity
 		_gps_position->vel_m_s = spd;
