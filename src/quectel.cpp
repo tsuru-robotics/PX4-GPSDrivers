@@ -72,12 +72,10 @@ static constexpr char QL_PQTM_MSG_NAME_ODO[] {"PQTMODO"};
 
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
-			     satellite_info_s *satellite_info,
-			     float epe_multiplier):
+			     satellite_info_s *satellite_info):
 	GPSHelper(callback, callback_user),
 	_gps_position(gps_position),
-	_satellite_info(satellite_info),
-	_epe_multiplier(epe_multiplier)
+	_satellite_info(satellite_info)
 {
 	decodeInit();
 }
@@ -554,8 +552,8 @@ int GPSDriverQL::handleMessage(int len)
 		while (*(++bufptr) != ',') {} //skip EPE_3D
 
 		// EPH and EPV
-		_gps_position->eph = epe_2d * _epe_multiplier;
-		_gps_position->epv = epe_down * _epe_multiplier;
+		_gps_position->eph = epe_2d;
+		_gps_position->epv = epe_down;
 
 		QL_DEBUG("--handled PQTMEPE");
 
@@ -931,6 +929,35 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 	}
 }
 
+int
+GPSDriverQL::reset(GPSRestartType restart_type)
+{
+	switch (restart_type) {
+	case GPSRestartType::Hot:
+		if (reset_hot()) {
+			return 0;
+		}
+		break;
+
+	case GPSRestartType::Warm:
+		if (reset_warm()) {
+			return 0;
+		}
+		break;
+
+	case GPSRestartType::Cold:
+		if (reset_cold()) {
+			return 0;
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return -2;
+}
+
 bool
 GPSDriverQL::configMessages(const QlMsgConfig &config)
 {
@@ -1019,7 +1046,7 @@ GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
 		return false;
 	}
 
-	return waitForNmeaAck(QL_SET_NMEA_OUTPUT_RATE, QL_CONFIG_TIMEOUT);
+	return waitForNmeaAck(62, QL_CONFIG_TIMEOUT);
 }
 
 bool
@@ -1033,7 +1060,46 @@ GPSDriverQL::setNmeaDebugMode(unsigned mode)
 		return false;
 	}
 
-	return waitForNmeaAck(QL_SET_DEBUGLOG_OUTPUT, QL_CONFIG_TIMEOUT);
+	return waitForNmeaAck(86, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::reset_hot()
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR004");
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	return waitForNmeaAck(4, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::reset_warm()
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR005");
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	return waitForNmeaAck(5, QL_CONFIG_TIMEOUT);
+}
+
+bool
+GPSDriverQL::reset_cold()
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR006");
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	return waitForNmeaAck(6, QL_CONFIG_TIMEOUT);
 }
 
 bool

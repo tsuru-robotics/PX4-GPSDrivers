@@ -51,18 +51,15 @@ class GPSDriverQL : public GPSHelper
 {
 public:
 
-	/**
-	 * @param heading_offset heading offset in radians [-pi, pi]. It is substracted from the measurement.
-	 */
 	GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 		      sensor_gps_s *gps_position,
-		      satellite_info_s *satellite_info,
-		      float heading_offset = 0.f);
+		      satellite_info_s *satellite_info);
 
 	virtual ~GPSDriverQL();
 
 	int receive(unsigned timeout) override;
 	int configure(unsigned &baudrate, const GPSConfig &config) override;
+	int reset(GPSRestartType restart_type) override;
 
 private:
 
@@ -82,9 +79,6 @@ private:
 		GRS, // Not supported on LC29H (BA, CA, DA, EA)
 		GST  // Not supported on LC29H (BA, CA, DA, EA)
 	};
-	static constexpr unsigned QL_SET_NMEA_OUTPUT_RATE = 62;
-	static constexpr unsigned QL_SET_DEBUGLOG_OUTPUT = 86;
-
 
 	enum class QlPqtmMsgVer {
 		NONE,
@@ -117,6 +111,10 @@ private:
 	bool setNmeaDebugMode(unsigned mode);
 
 	bool waitForNmeaAck(uint8_t command, unsigned timeout);
+
+	bool reset_hot();
+	bool reset_warm();
+	bool reset_cold();
 
 	bool setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate, QlPqtmMsgVer msg_ver);
 
@@ -152,7 +150,4 @@ private:
 	OutputMode _output_mode{OutputMode::GPS};
 
 	RTCMParsing *_rtcm_parsing{nullptr};
-
-	float _epe_multiplier{1.0f}; // multiplier for eph/epv from EPE message
-
 };
