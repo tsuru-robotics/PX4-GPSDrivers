@@ -1073,7 +1073,7 @@ GPSDriverQL::reset_hot()
 		return false;
 	}
 
-	return waitForNmeaAck(4, QL_CONFIG_TIMEOUT);
+	return waitForNmeaAck(4, QL_RESET_TIMEOUT);
 }
 
 bool
@@ -1086,7 +1086,7 @@ GPSDriverQL::reset_warm()
 		return false;
 	}
 
-	return waitForNmeaAck(5, QL_CONFIG_TIMEOUT);
+	return waitForNmeaAck(5, QL_RESET_TIMEOUT);
 }
 
 bool
@@ -1099,7 +1099,7 @@ GPSDriverQL::reset_cold()
 		return false;
 	}
 
-	return waitForNmeaAck(6, QL_CONFIG_TIMEOUT);
+	return waitForNmeaAck(6, QL_RESET_TIMEOUT);
 }
 
 bool
