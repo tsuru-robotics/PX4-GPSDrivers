@@ -64,7 +64,6 @@ public:
 private:
 
 	static constexpr unsigned QL_CONFIG_TIMEOUT = 500; // ms, timeout for waiting ACK
-	static constexpr unsigned QL_RESET_TIMEOUT = 1000; // ms, timeout for waiting ACK for reset commands
 	static constexpr unsigned QL_OUT_MSG_MAX_SIZE = 50;
 	static constexpr unsigned QL_RECV_BUFFER_SIZE = 1024;
 

@@ -1067,39 +1067,39 @@ bool
 GPSDriverQL::reset_hot()
 {
 	char msg[QL_OUT_MSG_MAX_SIZE] = "";
-	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR004");
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR004*");
 
 	if (!writeMessage(msg)) {
 		return false;
 	}
 
-	return waitForNmeaAck(4, QL_RESET_TIMEOUT);
+	return waitForNmeaAck(4, QL_CONFIG_TIMEOUT);
 }
 
 bool
 GPSDriverQL::reset_warm()
 {
 	char msg[QL_OUT_MSG_MAX_SIZE] = "";
-	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR005");
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR005*");
 
 	if (!writeMessage(msg)) {
 		return false;
 	}
 
-	return waitForNmeaAck(5, QL_RESET_TIMEOUT);
+	return waitForNmeaAck(5, QL_CONFIG_TIMEOUT);
 }
 
 bool
 GPSDriverQL::reset_cold()
 {
 	char msg[QL_OUT_MSG_MAX_SIZE] = "";
-	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR006");
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR006*");
 
 	if (!writeMessage(msg)) {
 		return false;
 	}
 
-	return waitForNmeaAck(6, QL_RESET_TIMEOUT);
+	return waitForNmeaAck(6, QL_CONFIG_TIMEOUT);
 }
 
 bool
