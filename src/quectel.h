@@ -51,22 +51,20 @@ class GPSDriverQL : public GPSHelper
 {
 public:
 
-	/**
-	 * @param heading_offset heading offset in radians [-pi, pi]. It is substracted from the measurement.
-	 */
 	GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 		      sensor_gps_s *gps_position,
-		      satellite_info_s *satellite_info,
-		      float heading_offset = 0.f);
+		      satellite_info_s *satellite_info);
 
 	virtual ~GPSDriverQL();
 
 	int receive(unsigned timeout) override;
 	int configure(unsigned &baudrate, const GPSConfig &config) override;
+	int reset(GPSRestartType restart_type) override;
 
 private:
 
 	static constexpr unsigned QL_CONFIG_TIMEOUT = 500; // ms, timeout for waiting ACK
+	static constexpr unsigned QL_RESET_ACK_TIMEOUT = 200; // ms, timeout for waiting ACK for hot|warm|cold reset messages
 	static constexpr unsigned QL_OUT_MSG_MAX_SIZE = 50;
 	static constexpr unsigned QL_RECV_BUFFER_SIZE = 1024;
 
@@ -82,9 +80,6 @@ private:
 		GRS, // Not supported on LC29H (BA, CA, DA, EA)
 		GST  // Not supported on LC29H (BA, CA, DA, EA)
 	};
-	static constexpr unsigned QL_SET_NMEA_OUTPUT_RATE = 62;
-	static constexpr unsigned QL_SET_DEBUGLOG_OUTPUT = 86;
-
 
 	enum class QlPqtmMsgVer {
 		NONE,
@@ -116,7 +111,17 @@ private:
 
 	bool setNmeaDebugMode(unsigned mode);
 
-	bool waitForNmeaAck(uint8_t command, unsigned timeout);
+	/**
+	 * Wait for NMEA ACK.
+	 * @param command NMEA command ID
+	 * @param timeout timeout in milliseconds
+	 * @return result on success, -1 on timeout
+	 */
+	int waitForNmeaAck(uint8_t command, unsigned timeout);
+
+	bool reset_hot();
+	bool reset_warm();
+	bool reset_cold();
 
 	bool setPqtmMsgOutputRate(const char pqtm_msg_name[], unsigned msg_rate, QlPqtmMsgVer msg_ver);
 
@@ -143,16 +148,12 @@ private:
 	uint8_t _rx_buffer[QL_RECV_BUFFER_SIZE] {};
 	uint16_t _rx_buffer_bytes{0};
 
-	bool _ack_nmea_command{false}; // true - ACK
 	uint8_t _ack_nmea_command_id{0};
-	uint8_t _ack_nmea_command_error_code{0};
+	uint8_t _ack_nmea_command_result{0};
 	bool _ack_pqtm_command{false}; // true - ACK
 	uint8_t _ack_pqtm_command_error_code{0};
 
 	OutputMode _output_mode{OutputMode::GPS};
 
 	RTCMParsing *_rtcm_parsing{nullptr};
-
-	float _epe_multiplier{1.0f}; // multiplier for eph/epv from EPE message
-
 };

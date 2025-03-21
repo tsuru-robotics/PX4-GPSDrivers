@@ -72,12 +72,10 @@ static constexpr char QL_PQTM_MSG_NAME_ODO[] {"PQTMODO"};
 
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
-			     satellite_info_s *satellite_info,
-			     float epe_multiplier):
+			     satellite_info_s *satellite_info):
 	GPSHelper(callback, callback_user),
 	_gps_position(gps_position),
-	_satellite_info(satellite_info),
-	_epe_multiplier(epe_multiplier)
+	_satellite_info(satellite_info)
 {
 	decodeInit();
 }
@@ -554,8 +552,8 @@ int GPSDriverQL::handleMessage(int len)
 		while (*(++bufptr) != ',') {} //skip EPE_3D
 
 		// EPH and EPV
-		_gps_position->eph = epe_2d * _epe_multiplier;
-		_gps_position->epv = epe_down * _epe_multiplier;
+		_gps_position->eph = epe_2d;
+		_gps_position->epv = epe_down;
 
 		QL_DEBUG("--handled PQTMEPE");
 
@@ -640,18 +638,9 @@ int GPSDriverQL::handleMessage(int len)
 		/* Set buffer pointer to data (size of "$PAIR001," == 9)*/
 		bufptr = (char *)(_rx_buffer + 9);
 
-		uint8_t result = 0;
-		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_id = strtol(bufptr, &endp, 10); bufptr = endp; }
-		if (bufptr && *(++bufptr) != ',') { result = strtol(bufptr, &endp, 10); bufptr = endp; }
+		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_id     = strtol(bufptr, &endp, 10); bufptr = endp; }
+		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_result = strtol(bufptr, &endp, 10); bufptr = endp; }
 
-		if (result == 0) {
-			_ack_nmea_command = true;
-			_ack_nmea_command_error_code = 0;
-
-		} else {
-			_ack_nmea_command = false;
-			_ack_nmea_command_error_code = result;
-		}
 		_ACK_received = true;
 
 		QL_DEBUG("--handled PAIR001");
@@ -789,7 +778,7 @@ GPSDriverQL::receive(unsigned timeout)
 
 		/* abort after timeout if no useful packets received */
 		if (time_started + timeout * 1000 < gps_absolute_time()) {
-			QL_WARN("Receive timeout!");
+			QL_WARN("Timeout receive");
 			return -1;
 		}
 	}
@@ -901,7 +890,6 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 		QL_WARN("RTCM output has to be configured manually");
 	}
 
-	// If a baudrate is defined, we test this first
 	if (baudrate > 0) {
 
 		QL_DEBUG("--baudrate set to %i", baudrate);
@@ -922,13 +910,42 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 			QL_DEBUG("GPS configured, baudrate=%d", baudrate);
 			return 0;
 		} else {
-			QL_WARN("GPS configure failed");
+			QL_WARN("Failed configuring GPS");
 			return -1;
 		}
 	} else {
-		QL_WARN("GPS baudrate not defined");
+		QL_WARN("Failed configuring GPS, baudrate is set to 0");
 		return -1;
 	}
+}
+
+int
+GPSDriverQL::reset(GPSRestartType restart_type)
+{
+	switch (restart_type) {
+	case GPSRestartType::Hot:
+		if (reset_hot()) {
+			return 0;
+		}
+		break;
+
+	case GPSRestartType::Warm:
+		if (reset_warm()) {
+			return 0;
+		}
+		break;
+
+	case GPSRestartType::Cold:
+		if (reset_cold()) {
+			return 0;
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return -2;
 }
 
 bool
@@ -936,73 +953,78 @@ GPSDriverQL::configMessages(const QlMsgConfig &config)
 {
 	// Set GGA rate (Output once every N position fix(es))
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GGA, config.RateGGA)) {
-		QL_WARN("Failed configuring GGA rate");
+		QL_WARN("Failed configuring GGA rate %d", config.RateGGA);
 		return false;
 	}
 	// Set GSV rate (optional), output once every position fix)
 	unsigned gsv_rate = (_satellite_info) ? 1 : 0;
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GSV, gsv_rate)) {
-		QL_WARN("Failed configuring GSV rate");
+		QL_WARN("Failed configuring GSV rate %d", gsv_rate);
 		return false;
 	}
-
 	// Disable GLL
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GLL, 0)) {
-		QL_WARN("Failed configuring GLL rate");
+		QL_WARN("Failed disabling GLL");
 		return false;
 	}
 	// Disable GSA
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::GSA, 0)) {
-		QL_WARN("Failed configuring GSA rate");
+		QL_WARN("Failed disabling GSA");
 		return false;
 	}
 	// Disable RMC
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::RMC, 0)) {
-		QL_WARN("Failed configuring RMC rate");
+		QL_WARN("Failed disabling RMC");
 		return false;
 	}
 	// Disable VTG
 	if (!setNmeaMsgOutputRate(QlNmeaMsgId::VTG, 0)) {
-		QL_WARN("Failed configuring VTG rate");
+		QL_WARN("Failed disabling VTG");
 		return false;
 	}
-
 	// Set PQTMPVT rate (Output once every position fix)
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PVT, 1, QlPqtmMsgVer::VER1)) {
+		QL_WARN("Failed enabling PQTMPVT");
 		return false;
 	}
 	// Set PQTMEPE rate (Output once every N position fix(es))
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_EPE, config.RatePQTMEPE, QlPqtmMsgVer::VER2)) {
+		QL_WARN("Failed configuring PQTMEPE rate %d", config.RatePQTMEPE);
 		return false;
 	}
 	// Set PQTMDOP rate (Output once every N position fix(es))
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_DOP, config.RatePQTMDOP, QlPqtmMsgVer::VER1)) {
+		QL_WARN("Failed configuring PQTMDOP rate %d", config.RatePQTMDOP);
 		return false;
 	}
 	// Set PQTMVEL rate (Output once every N position fix(es))
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_VEL, config.RatePQTMVEL, QlPqtmMsgVer::VER1)) {
+		QL_WARN("Failed configuring PQTMVEL rate %d", config.RatePQTMVEL);
 		return false;
 	}
 	// Disable PQTMPL
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_PL, 0, QlPqtmMsgVer::VER1)) {
+		QL_WARN("Failed disabling PQTMPL");
 		return false;
 	}
 	// Disable PQTMGEOFENCESTATUS
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_GEOFENCESTATUS, 0, QlPqtmMsgVer::VER1)) {
+		QL_WARN("Failed disabling PQTMGEOFENCESTATUS");
 		return false;
 	}
 	// Disable PQTMODO
 	if (!setPqtmMsgOutputRate(QL_PQTM_MSG_NAME_ODO, 0, QlPqtmMsgVer::VER1)) {
+		QL_WARN("Failed disabling PQTMODO");
 		return false;
 	}
-
 	// Set PQTM debug logging mode
 	if (!setPqtmDebugMode(config.PQTMDebugMode)) {
+		QL_WARN("Failed configuring PQTM log mode %d", config.PQTMDebugMode);
 		return false;
 	}
-
 	// Set NMEA debug logging mode
 	if (!setNmeaDebugMode(config.NmeaDebugMode)) {
+		QL_WARN("Failed configuring NMEA log mode %d", config.NmeaDebugMode);
 		return false;
 	}
 
@@ -1019,7 +1041,14 @@ GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
 		return false;
 	}
 
-	return waitForNmeaAck(QL_SET_NMEA_OUTPUT_RATE, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(62, QL_CONFIG_TIMEOUT);
+	// Expected result is "Command has been successfully sent."
+	if (res != 0) {
+		QL_WARN("Failed waiting ACK for PAIR062 with error=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
 bool
@@ -1033,30 +1062,89 @@ GPSDriverQL::setNmeaDebugMode(unsigned mode)
 		return false;
 	}
 
-	return waitForNmeaAck(QL_SET_DEBUGLOG_OUTPUT, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(86, QL_CONFIG_TIMEOUT);
+	// Expected result is "Command has been successfully sent."
+	if (res != 0) {
+		QL_WARN("Failed waiting ACK for PAIR086 with error=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
 bool
+GPSDriverQL::reset_hot()
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR004*");
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	int res = waitForNmeaAck(4, QL_RESET_ACK_TIMEOUT);
+	// Expected "Command has been successfully sent" or "Command is being processed"
+	if ((res == 0) || (res == 1)){
+		return true;
+	} else {
+		QL_WARN("Failed waiting ACK for PAIR004 with error=%d", res);
+		return false;
+	}
+}
+
+bool
+GPSDriverQL::reset_warm()
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR005*");
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	int res = waitForNmeaAck(5, QL_RESET_ACK_TIMEOUT);
+	// Expected "Command has been successfully sent" or "Command is being processed"
+	if ((res == 0) || (res == 1)){
+		return true;
+	} else {
+		QL_WARN("Failed waiting ACK for PAIR005 with error=%d", res);
+		return false;
+	}
+}
+
+bool
+GPSDriverQL::reset_cold()
+{
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PAIR006*");
+
+	if (!writeMessage(msg)) {
+		return false;
+	}
+
+	int res = waitForNmeaAck(6, QL_RESET_ACK_TIMEOUT);
+	// Expected "Command has been successfully sent" or "Command is being processed"
+	if ((res == 0) || (res == 1)){
+		return true;
+	} else {
+		QL_WARN("Failed waiting ACK for PAIR006 with error=%d", res);
+		return false;
+	}
+}
+
+int
 GPSDriverQL::waitForNmeaAck(uint8_t command_id, unsigned timeout)
 {
 	_waiting_for_ACK = true;
 	receive(timeout);
 	_waiting_for_ACK = false;
 
-	bool res = false;
+	int res = -1; // timeout
+
 	if (_ack_nmea_command_id == command_id) {
-		if (!_ack_nmea_command) {
-			QL_WARN("Received NAK for command %d, error code=%d", command_id, _ack_nmea_command_error_code);
-		} else {
-			res = true;
-		}
-
+		res = _ack_nmea_command_result;
 		_ack_nmea_command_id = 0;
-		_ack_nmea_command = false;
-		_ack_nmea_command_error_code = 0;
-
-	} else {
-		QL_WARN("Timeout waiting ACK for command %d", command_id);
+		_ack_nmea_command_result = 0;
 	}
 
 	return res;
@@ -1106,7 +1194,7 @@ GPSDriverQL::waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout)
 
 	bool res = false;
 	if (!_ack_pqtm_command) {
-		QL_WARN("Received NAK (error code %d) for command %s", _ack_pqtm_command_error_code, msg);
+		QL_WARN("Failed waiting ACK for %s with error=%d", msg, _ack_pqtm_command_error_code);
 	} else {
 		res = true;
 	}
