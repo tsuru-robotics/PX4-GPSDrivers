@@ -638,18 +638,9 @@ int GPSDriverQL::handleMessage(int len)
 		/* Set buffer pointer to data (size of "$PAIR001," == 9)*/
 		bufptr = (char *)(_rx_buffer + 9);
 
-		uint8_t result = 0;
-		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_id = strtol(bufptr, &endp, 10); bufptr = endp; }
-		if (bufptr && *(++bufptr) != ',') { result = strtol(bufptr, &endp, 10); bufptr = endp; }
+		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_id     = strtol(bufptr, &endp, 10); bufptr = endp; }
+		if (bufptr && *(++bufptr) != ',') { _ack_nmea_command_result = strtol(bufptr, &endp, 10); bufptr = endp; }
 
-		if (result == 0) {
-			_ack_nmea_command = true;
-			_ack_nmea_command_error_code = 0;
-
-		} else {
-			_ack_nmea_command = false;
-			_ack_nmea_command_error_code = result;
-		}
 		_ACK_received = true;
 
 		QL_DEBUG("--handled PAIR001");
@@ -1046,7 +1037,14 @@ GPSDriverQL::setNmeaMsgOutputRate(QlNmeaMsgId nmea_msg_type, unsigned msg_rate)
 		return false;
 	}
 
-	return waitForNmeaAck(62, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(62, QL_CONFIG_TIMEOUT);
+	// Expected result is "Command has been successfully sent."
+	if (res != 0) {
+		QL_WARN("Waiting ACK for PAIR062 failed with result=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
 bool
@@ -1060,7 +1058,14 @@ GPSDriverQL::setNmeaDebugMode(unsigned mode)
 		return false;
 	}
 
-	return waitForNmeaAck(86, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(86, QL_CONFIG_TIMEOUT);
+	// Expected result is "Command has been successfully sent."
+	if (res != 0) {
+		QL_WARN("Waiting ACK for PAIR086 failed with result=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
 bool
@@ -1073,7 +1078,14 @@ GPSDriverQL::reset_hot()
 		return false;
 	}
 
-	return waitForNmeaAck(4, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(4, QL_RESET_ACK_TIMEOUT);
+	// Expected result is "Command has been successfully sent."
+	if (res != 0) {
+		QL_WARN("Waiting ACK for PAIR004 failed with result=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
 bool
@@ -1086,7 +1098,14 @@ GPSDriverQL::reset_warm()
 		return false;
 	}
 
-	return waitForNmeaAck(5, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(5, QL_RESET_ACK_TIMEOUT);
+	// Expected result is "Command is being processed. Please wait for the result."
+	if (res != 1) {
+		QL_WARN("Waiting ACK for PAIR005 failed with result=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
 bool
@@ -1099,30 +1118,29 @@ GPSDriverQL::reset_cold()
 		return false;
 	}
 
-	return waitForNmeaAck(6, QL_CONFIG_TIMEOUT);
+	int res = waitForNmeaAck(6, QL_RESET_ACK_TIMEOUT);
+	// Expected result is "Command is being processed. Please wait for the result."
+	if (res != 1) {
+		QL_WARN("Waiting ACK for PAIR006 failed with result=%d", res);
+		return false;
+	}
+
+	return true;
 }
 
-bool
+int
 GPSDriverQL::waitForNmeaAck(uint8_t command_id, unsigned timeout)
 {
 	_waiting_for_ACK = true;
 	receive(timeout);
 	_waiting_for_ACK = false;
 
-	bool res = false;
+	int res = -1; // timeout
+
 	if (_ack_nmea_command_id == command_id) {
-		if (!_ack_nmea_command) {
-			QL_WARN("Received NAK for command %d, error code=%d", command_id, _ack_nmea_command_error_code);
-		} else {
-			res = true;
-		}
-
+		res = _ack_nmea_command_result;
 		_ack_nmea_command_id = 0;
-		_ack_nmea_command = false;
-		_ack_nmea_command_error_code = 0;
-
-	} else {
-		QL_WARN("Timeout waiting ACK for command %d", command_id);
+		_ack_nmea_command_result = 0;
 	}
 
 	return res;

@@ -64,6 +64,7 @@ public:
 private:
 
 	static constexpr unsigned QL_CONFIG_TIMEOUT = 500; // ms, timeout for waiting ACK
+	static constexpr unsigned QL_RESET_ACK_TIMEOUT = 200; // ms, timeout for waiting ACK for hot|warm|cold reset messages
 	static constexpr unsigned QL_OUT_MSG_MAX_SIZE = 50;
 	static constexpr unsigned QL_RECV_BUFFER_SIZE = 1024;
 
@@ -110,7 +111,13 @@ private:
 
 	bool setNmeaDebugMode(unsigned mode);
 
-	bool waitForNmeaAck(uint8_t command, unsigned timeout);
+	/**
+	 * Wait for NMEA ACK.
+	 * @param command NMEA command ID
+	 * @param timeout timeout in milliseconds
+	 * @return result on success, -1 on timeout
+	 */
+	int waitForNmeaAck(uint8_t command, unsigned timeout);
 
 	bool reset_hot();
 	bool reset_warm();
@@ -141,9 +148,8 @@ private:
 	uint8_t _rx_buffer[QL_RECV_BUFFER_SIZE] {};
 	uint16_t _rx_buffer_bytes{0};
 
-	bool _ack_nmea_command{false}; // true - ACK
 	uint8_t _ack_nmea_command_id{0};
-	uint8_t _ack_nmea_command_error_code{0};
+	uint8_t _ack_nmea_command_result{0};
 	bool _ack_pqtm_command{false}; // true - ACK
 	uint8_t _ack_pqtm_command_error_code{0};
 
