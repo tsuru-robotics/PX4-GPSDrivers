@@ -199,6 +199,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 
 				if (waitForAck(UBX_MSG_CFG_PRT, UBX_CONFIG_TIMEOUT, false) < 0) {
 					/* try next baudrate */
+					UBX_WARN("Failed waiting ACK for protocol configuration on test baudrate=%d", test_baudrate);
 					continue;
 				}
 
@@ -232,6 +233,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 		}
 
 		if (baud_i >= sizeof(baudrates) / sizeof(baudrates[0])) {
+			UBX_WARN("Failed configuring GPS, baudrate not deteced");
 			return -1;	// connection and/or baudrate detection failed
 		}
 
@@ -276,6 +278,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 		}
 
 	} else {
+		UBX_WARN("Failed configuring GPS, invalid interface set");
 		return -1;
 	}
 
@@ -290,6 +293,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 	 * Note: we won't actually get an ACK-ACK, but UBX_MSG_MON_VER will also set the ack state.
 	 */
 	if (waitForAck(UBX_MSG_MON_VER, UBX_CONFIG_TIMEOUT, true) < 0) {
+		UBX_WARN("Failed configuring GPS, failed waiting ACK for MON_VER message");
 		return -1;
 	}
 
@@ -326,6 +330,7 @@ GPSDriverUBX::configure(unsigned &baudrate, const GPSConfig &config)
 	}
 
 	if (ret != 0) {
+		UBX_WARN("Failed configuring GPS");
 		return ret;
 	}
 
@@ -358,6 +363,7 @@ int GPSDriverUBX::configureDevicePreV27(const GPSConfig &config)
 	}
 
 	if (waitForAck(UBX_MSG_CFG_RATE, UBX_CONFIG_TIMEOUT, true) < 0) {
+		UBX_WARN("Failed waiting ACK for message rates configuration");
 		return -1;
 	}
 
@@ -372,11 +378,12 @@ int GPSDriverUBX::configureDevicePreV27(const GPSConfig &config)
 	}
 
 	if (waitForAck(UBX_MSG_CFG_NAV5, UBX_CONFIG_TIMEOUT, true) < 0) {
+		UBX_WARN("Failed waiting ACK for NAV5 message");
 		return -1;
 	}
 
 	if (configureDgnssM8P(config.ubx_dgnss_mode) < 0) {
-		UBX_WARN("DGNSS config failed");
+		UBX_WARN("Failed configuring DGNSS mode");
 		return -1;
 	}
 
@@ -460,6 +467,7 @@ int GPSDriverUBX::configureDevicePreV27(const GPSConfig &config)
 	/* try to set rate for NAV-PVT */
 	/* (implemented for ubx7+ modules only, use NAV-SOL, NAV-POSLLH, NAV-VELNED and NAV-TIMEUTC for ubx6) */
 	if (!configureMessageRate(UBX_MSG_NAV_PVT, 1)) {
+		UBX_WARN("Failed configuring NAV-PVT rate");
 		return -1;
 	}
 
@@ -474,48 +482,59 @@ int GPSDriverUBX::configureDevicePreV27(const GPSConfig &config)
 
 	if (!_use_nav_pvt) {
 		if (!configureMessageRateAndAck(UBX_MSG_NAV_TIMEUTC, 5, true)) {
+			UBX_WARN("Failed configuring NAV_TIMEUTC rate");
 			return -1;
 		}
 
 		if (!configureMessageRateAndAck(UBX_MSG_NAV_POSLLH, 1, true)) {
+			UBX_WARN("Failed configuring NAV_POSLLH rate");
 			return -1;
 		}
 
 		if (!configureMessageRateAndAck(UBX_MSG_NAV_SOL, 1, true)) {
+			UBX_WARN("Failed configuring NAV_SOL rate");
 			return -1;
 		}
 
 		if (!configureMessageRateAndAck(UBX_MSG_NAV_VELNED, 1, true)) {
+			UBX_WARN("Failed configuring NAV_VELNED rate");
 			return -1;
 		}
 	}
 
 	if (!configureMessageRateAndAck(UBX_MSG_NAV_STATUS, 1, true)) {
+		UBX_WARN("Failed configuring NAV_STATUS rate");
 		return -1;
 	}
 
 	if (!configureMessageRateAndAck(UBX_MSG_NAV_DOP, 1, true)) {
+		UBX_WARN("Failed configuring NAV_DOP rate");
 		return -1;
 	}
 
 	if (!configureMessageRateAndAck(UBX_MSG_NAV_SVINFO, (_satellite_info != nullptr) ? 5 : 0, true)) {
+		UBX_WARN("Failed configuring NAV_SVINFO rate");
 		return -1;
 	}
 
 	if (!configureMessageRateAndAck(UBX_MSG_MON_HW, 1, true)) {
+		UBX_WARN("Failed configuring MON_HW rate");
 		return -1;
 	}
 	if (config.ubx_enable_rxm_messages) {
 
 		if (!configureMessageRateAndAck(UBX_MSG_RXM_RTCM, 1, true)) {
+			UBX_WARN("Failed configuring RXM_RTCM rate");
 			return -1;
 		}
 
 		if (!configureMessageRateAndAck(UBX_MSG_RXM_SFRBX, 1, true)) {
+			UBX_WARN("Failed configuring RXM_SFRBX rate");
 			return -1;
 		}
 
 		if (!configureMessageRateAndAck(UBX_MSG_RXM_RAWX, 1, true)) {
+			UBX_WARN("Failed configuring RXM_RAWX rate");
 			return -1;
 		}
 	}
@@ -555,6 +574,7 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 		}
 
 		if (waitForAck(UBX_MSG_CFG_VALSET, UBX_CONFIG_TIMEOUT, true) < 0) {
+			UBX_WARN("Failed waiting ACK for USB configuration");
 			return -1;
 		}
 	}
@@ -596,6 +616,7 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 	}
 
 	if (waitForAck(UBX_MSG_CFG_VALSET, UBX_CONFIG_TIMEOUT, true) < 0) {
+		UBX_WARN("Failed waiting ACK for configuration parameters");
 		return -1;
 	}
 
@@ -698,6 +719,7 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 	}
 
 	if (waitForAck(UBX_MSG_CFG_VALSET, UBX_CONFIG_TIMEOUT, true) < 0) {
+		UBX_WARN("Failed waiting ACK for message rates configuration");
 		return -1;
 	}
 
@@ -732,6 +754,7 @@ int GPSDriverUBX::configureDevice(const GPSConfig &config, const int32_t uart2_b
 		}
 
 		if (waitForAck(UBX_MSG_CFG_VALSET, UBX_CONFIG_TIMEOUT, true) < 0) {
+			UBX_WARN("Failed waiting ACK for I2C prtotocols configuration");
 			return -1;
 		}
 	}
@@ -1063,10 +1086,10 @@ GPSDriverUBX::waitForAck(const uint16_t msg, const unsigned timeout, const bool 
 
 	} else if (report) {
 		if (_ack_state == UBX_ACK_GOT_NAK) {
-			UBX_DEBUG("ubx msg 0x%04x NAK", SWAP16((unsigned)msg));
+			UBX_WARN("ubx msg 0x%04x NAK", SWAP16((unsigned)msg));
 
 		} else {
-			UBX_DEBUG("ubx msg 0x%04x ACK timeout", SWAP16((unsigned)msg));
+			UBX_WARN("ubx msg 0x%04x ACK timeout", SWAP16((unsigned)msg));
 		}
 	}
 
@@ -2470,14 +2493,17 @@ GPSDriverUBX::sendMessage(const uint16_t msg, const uint8_t *payload, const uint
 
 	// Send message
 	if (write((void *)&header, sizeof(header)) != sizeof(header)) {
+		UBX_WARN("Failed writing header for msg 0x%04x", SWAP16((unsigned)msg));
 		return false;
 	}
 
 	if (payload && write((void *)payload, length) != length) {
+		UBX_WARN("Failed writing payload for msg 0x%04x", SWAP16((unsigned)msg));
 		return false;
 	}
 
 	if (write((void *)&checksum, sizeof(checksum)) != sizeof(checksum)) {
+		UBX_WARN("Failed writing checksum for msg 0x%04x", SWAP16((unsigned)msg));
 		return false;
 	}
 
