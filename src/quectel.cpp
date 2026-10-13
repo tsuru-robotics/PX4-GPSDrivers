@@ -309,7 +309,7 @@ int GPSDriverQL::handleMessage(int len)
 
 				int sat_index = y + (this_page_num - 1) * 4;
 
-				if ((sat_index < 0) || (sat_index > satellite_info_s::SAT_INFO_MAX_SATELLITES)) {
+				if ((sat_index < 0) || (sat_index >= satellite_info_s::SAT_INFO_MAX_SATELLITES)) {
 					QL_WARN("GSV parse error. sat_index %d not valid", sat_index);
 					return 0;
 				}
