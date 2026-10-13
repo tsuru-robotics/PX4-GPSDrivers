@@ -371,14 +371,14 @@ int GPSDriverQL::handleMessage(int len)
 		/* Skip <HDOP> */
 		while (*(++bufptr) != ',') {}
 
-		// Position
-		_gps_position->lon = static_cast<int>((int(lon * 10000000)));
-		_gps_position->lat = static_cast<int>((int(lat * 10000000)));
+		// Position (rounded, not truncated: truncation biased lat/lon by up to 1e-7 deg, about 0.5 cm, toward zero)
+		_gps_position->lon = static_cast<int32_t>(round(lon * 1e7));
+		_gps_position->lat = static_cast<int32_t>(round(lat * 1e7));
 		_POS_received = true;
 
 		// Altitude
-		_gps_position->alt = static_cast<int>(alt * 1000);
-		_gps_position->alt_ellipsoid = static_cast<int>((alt + sep) * 1000);
+		_gps_position->alt = static_cast<int32_t>(roundf(alt * 1000.f));
+		_gps_position->alt_ellipsoid = static_cast<int32_t>(roundf((alt + sep) * 1000.f));
 
 		// Velocity
 		_gps_position->vel_m_s = spd;
