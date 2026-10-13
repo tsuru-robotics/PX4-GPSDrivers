@@ -70,6 +70,32 @@ static constexpr char QL_PQTM_MSG_NAME_DOP[] {"PQTMDOP"};
 static constexpr char QL_PQTM_MSG_NAME_VEL[] {"PQTMVEL"};
 static constexpr char QL_PQTM_MSG_NAME_ODO[] {"PQTMODO"};
 
+// $PQTMCFGCNST fields, bit n = field n in command order
+static constexpr uint8_t QL_CNST_GPS     = 1 << 0;
+static constexpr uint8_t QL_CNST_GLONASS = 1 << 1;
+static constexpr uint8_t QL_CNST_GALILEO = 1 << 2;
+static constexpr uint8_t QL_CNST_BDS     = 1 << 3;
+static constexpr uint8_t QL_CNST_QZSS    = 1 << 4;
+static constexpr uint8_t QL_CNST_NAVIC   = 1 << 5;
+static constexpr int QL_CNST_FIELDS = 6;
+
+// Combinations the LC29H (BA, CA, DA, EA) accepts (protocol specification V1.4, PQTMCFGCNST note 2).
+// Reachable from GPS_x_GNSS (GPS bit = GPS + QZSS): 29, 13, 5, 9, 1 and 8.
+static constexpr uint8_t QL_CNST_ACCEPTED[] {
+	QL_CNST_GPS | QL_CNST_GLONASS | QL_CNST_GALILEO | QL_CNST_BDS | QL_CNST_QZSS,
+	QL_CNST_GPS | QL_CNST_GALILEO | QL_CNST_BDS | QL_CNST_QZSS,
+	QL_CNST_GPS | QL_CNST_GALILEO | QL_CNST_QZSS,
+	QL_CNST_GPS | QL_CNST_BDS | QL_CNST_QZSS,
+	QL_CNST_GPS | QL_CNST_BDS,
+	QL_CNST_GPS | QL_CNST_QZSS,
+	QL_CNST_BDS,
+	QL_CNST_GPS,
+};
+
+// GPS_x_GNSS value whose constellation step has run in this boot. gps.cpp recreates the helper for every
+// (re)configuration, which also happens in flight after a gap in the receiver data, so this lives outside it.
+static int32_t s_cnst_handled_mask{0};
+
 GPSDriverQL::GPSDriverQL(GPSCallbackPtr callback, void *callback_user,
 			     sensor_gps_s *gps_position,
 			     satellite_info_s *satellite_info):
@@ -700,6 +726,52 @@ int GPSDriverQL::handleMessage(int len)
 		_ACK_received = true;
 
 		QL_DEBUG("--handled PQTMDEBUGOFF,ERROR");
+
+	} else if ((memcmp(_rx_buffer, "$PQTMCFGCNST,", 13) == 0) || (memcmp(_rx_buffer, "$PQTMSAVEPAR,", 13) == 0)) {
+		/*
+		Replies to the constellation step, taken only while their command is awaited (sendCmdWaitReply()):
+		$PQTMCFGCNST,OK*<Checksum>                                                 (Set)
+		$PQTMCFGCNST,OK,<GPS>,<GLONASS>,<Galileo>,<BDS>,<QZSS>,<NavIC>*<Checksum>  (Get)
+		$PQTMSAVEPAR,OK*<Checksum>
+		$PQTMCFGCNST,ERROR,<ErrCode>*<Checksum> and $PQTMSAVEPAR,ERROR,<ErrCode>*<Checksum>
+		*/
+		const QlCmd cmd = (memcmp(_rx_buffer, "$PQTMCFGCNST,", 13) == 0) ? QlCmd::CFGCNST : QlCmd::SAVEPAR;
+
+		/* Set buffer pointer to the result (size of "$PQTMCFGCNST," == size of "$PQTMSAVEPAR," == 13) */
+		bufptr = (char *)(_rx_buffer + 13);
+
+		if (cmd == _awaited_cmd) {
+			if (memcmp(bufptr, "OK", 2) == 0) {
+				_cmd_reply = QlCmdReply::REPLY_OK;
+				bufptr += 2;
+
+				// Get reply: six fields, each 0 or 1. The message ends with '*', which stops the scan.
+				uint8_t cnst = 0;
+				int fields = 0;
+
+				while ((fields < QL_CNST_FIELDS) && (bufptr[0] == ',') && ((bufptr[1] == '0') || (bufptr[1] == '1'))) {
+					if (bufptr[1] == '1') { cnst |= (1 << fields); }
+
+					bufptr += 2;
+					fields++;
+				}
+
+				if ((cmd == QlCmd::CFGCNST) && (fields == QL_CNST_FIELDS) && (*bufptr == '*')) {
+					_cnst_read = cnst;
+					_cnst_read_valid = true;
+				}
+
+			} else if (memcmp(bufptr, "ERROR,", 6) == 0) {
+				_cmd_reply = QlCmdReply::REPLY_ERROR;
+				_cmd_error_code = strtol(bufptr + 6, &endp, 10);
+			}
+
+			if (_cmd_reply != QlCmdReply::NONE) {
+				_ACK_received = true;
+			}
+		}
+
+		QL_DEBUG("--handled PQTMCFGCNST/PQTMSAVEPAR reply");
 	}
 
 	if (_waiting_for_ACK) {
@@ -899,6 +971,10 @@ int GPSDriverQL::configure(unsigned &baudrate, const GPSConfig &config)
 		decodeInit();
 		receive(20);
 		decodeInit();
+
+		// Constellations (GPS_x_GNSS). Before the message rates: a $PQTMSAVEPAR saves all current settings, and
+		// right after a receiver power-up these are still the receiver's own (the BMC only queries it).
+		configConstellations(config.gnss_systems);
 
 		// configure messages
 		bool msg_rates_configured = configMessages(config.quectel_msg_config);
@@ -1203,6 +1279,171 @@ GPSDriverQL::waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout)
 	_ack_pqtm_command_error_code = 0;
 
 	return res;
+}
+
+void
+GPSDriverQL::configConstellations(GNSSSystemsMask gnss_systems)
+{
+	const int32_t mask = static_cast<int32_t>(gnss_systems);
+
+	// 0 = receiver defaults: send nothing. Otherwise run once per boot for this value.
+	if ((mask == 0) || (mask == s_cnst_handled_mask)) {
+		return;
+	}
+
+	s_cnst_handled_mask = mask;
+
+	// GPS_x_GNSS bits -> $PQTMCFGCNST fields. The GPS bit means GPS with QZSS.
+	uint8_t want = 0;
+
+	if (gnss_systems & GNSSSystemsMask::ENABLE_GPS)     { want |= QL_CNST_GPS | QL_CNST_QZSS; }
+
+	if (gnss_systems & GNSSSystemsMask::ENABLE_GLONASS) { want |= QL_CNST_GLONASS; }
+
+	if (gnss_systems & GNSSSystemsMask::ENABLE_GALILEO) { want |= QL_CNST_GALILEO; }
+
+	if (gnss_systems & GNSSSystemsMask::ENABLE_BEIDOU)  { want |= QL_CNST_BDS; }
+
+	if (gnss_systems & GNSSSystemsMask::ENABLE_NAVIC)   { want |= QL_CNST_NAVIC; }
+
+	// SBAS has no $PQTMCFGCNST field (and the LC29H(EA) has no SBAS); bits above NavIC are undefined
+	bool accepted = false;
+
+	if (!(gnss_systems & GNSSSystemsMask::ENABLE_SBAS) && ((mask & ~0x3F) == 0)) {
+		for (const uint8_t combination : QL_CNST_ACCEPTED) {
+			if (combination == want) {
+				accepted = true;
+				break;
+			}
+		}
+	}
+
+	if (!accepted) {
+		QL_WARN("GNSS systems %d: not an LC29H(EA) combination (1, 5, 8, 9, 13, 29), constellations unchanged", (int)mask);
+		return;
+	}
+
+	char want_str[48];
+	char was_str[48];
+	cnstToString(want, want_str, sizeof(want_str));
+
+	// 1. Read the receiver's setting
+	char msg[QL_OUT_MSG_MAX_SIZE] = "";
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGCNST,R*");
+
+	if (!sendCmdWaitReply(msg, QlCmd::CFGCNST, QL_CONFIG_TIMEOUT)) {
+		QL_WARN("No reply to $PQTMCFGCNST,R, constellations unchanged");
+		return;
+	}
+
+	if (_cmd_reply == QlCmdReply::REPLY_ERROR) {
+		QL_WARN("$PQTMCFGCNST,R error %d, constellations unchanged", _cmd_error_code);
+		return;
+	}
+
+	if (!_cnst_read_valid) {
+		QL_WARN("Unexpected $PQTMCFGCNST,R reply, constellations unchanged");
+		return;
+	}
+
+	const uint8_t was = _cnst_read;
+	cnstToString(was, was_str, sizeof(was_str));
+
+	if (was == want) {
+		GPS_INFO("Constellations already %s", want_str);
+		return;
+	}
+
+	// 2. Write the new set. It takes effect only after $PQTMSAVEPAR and a receiver restart.
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGCNST,W,%d,%d,%d,%d,%d,%d*",
+		 (want >> 0) & 1, (want >> 1) & 1, (want >> 2) & 1, (want >> 3) & 1, (want >> 4) & 1, (want >> 5) & 1);
+
+	if (!sendCmdWaitReply(msg, QlCmd::CFGCNST, QL_CONFIG_TIMEOUT) || (_cmd_reply != QlCmdReply::REPLY_OK)) {
+		warnCnstCmdFailed("$PQTMCFGCNST,W", was_str);
+		return;
+	}
+
+	// 3. Save to the NVM (all current settings; see the call in configure())
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMSAVEPAR*");
+
+	if (!sendCmdWaitReply(msg, QlCmd::SAVEPAR, QL_SAVEPAR_TIMEOUT) || (_cmd_reply != QlCmdReply::REPLY_OK)) {
+		warnCnstCmdFailed("$PQTMSAVEPAR", was_str);
+
+		// Write the old set back, so that the next boot does not read the unsaved one as already set
+		snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGCNST,W,%d,%d,%d,%d,%d,%d*",
+			 (was >> 0) & 1, (was >> 1) & 1, (was >> 2) & 1, (was >> 3) & 1, (was >> 4) & 1, (was >> 5) & 1);
+		sendCmdWaitReply(msg, QlCmd::CFGCNST, QL_CONFIG_TIMEOUT);
+		return;
+	}
+
+	QL_WARN("Constellations saved (was %s, now %s); they apply after the receiver is power-cycled", was_str, want_str);
+
+	// 4. Read back, for the log only: whether the receiver now reports the saved or the running set
+	snprintf(msg, QL_OUT_MSG_MAX_SIZE, "$PQTMCFGCNST,R*");
+
+	if (sendCmdWaitReply(msg, QlCmd::CFGCNST, QL_CONFIG_TIMEOUT) && _cnst_read_valid) {
+		cnstToString(_cnst_read, was_str, sizeof(was_str));
+		GPS_INFO("Constellations read back after the save: %s", was_str);
+	}
+}
+
+bool
+GPSDriverQL::sendCmdWaitReply(char msg[QL_OUT_MSG_MAX_SIZE], QlCmd cmd, unsigned timeout)
+{
+	_awaited_cmd = cmd;
+	_cmd_reply = QlCmdReply::NONE;
+	_cmd_error_code = 0;
+	_cnst_read_valid = false;
+
+	if (!writeMessage(msg)) {
+		_awaited_cmd = QlCmd::NONE;
+		return false;
+	}
+
+	// receive() also returns on other ACKs, so keep reading until this command's reply or the deadline
+	const gps_abstime deadline = gps_absolute_time() + timeout * 1000;
+	_waiting_for_ACK = true;
+
+	while (_cmd_reply == QlCmdReply::NONE) {
+		const gps_abstime now = gps_absolute_time();
+
+		if ((now >= deadline) || (receive(static_cast<unsigned>((deadline - now) / 1000) + 1) < 0)) {
+			break;
+		}
+	}
+
+	_waiting_for_ACK = false;
+	_awaited_cmd = QlCmd::NONE;
+
+	return (_cmd_reply != QlCmdReply::NONE);
+}
+
+void
+GPSDriverQL::warnCnstCmdFailed(const char *cmd_name, const char *cnst_str)
+{
+	if (_cmd_reply == QlCmdReply::REPLY_ERROR) {
+		QL_WARN("%s error %d, constellations stay %s", cmd_name, _cmd_error_code, cnst_str);
+
+	} else {
+		QL_WARN("No reply to %s, constellations stay %s", cmd_name, cnst_str);
+	}
+}
+
+void
+GPSDriverQL::cnstToString(uint8_t cnst, char *buf, size_t buf_len)
+{
+	static constexpr const char *names[QL_CNST_FIELDS] {"GPS", "GLO", "GAL", "BDS", "QZSS", "NavIC"};
+
+	int len = snprintf(buf, buf_len, "%d,%d,%d,%d,%d,%d",
+			   (cnst >> 0) & 1, (cnst >> 1) & 1, (cnst >> 2) & 1, (cnst >> 3) & 1, (cnst >> 4) & 1, (cnst >> 5) & 1);
+	char sep = ' ';
+
+	for (int i = 0; (i < QL_CNST_FIELDS) && (len > 0) && (static_cast<size_t>(len) < buf_len); i++) {
+		if (cnst & (1 << i)) {
+			len += snprintf(buf + len, buf_len - len, "%c%s", sep, names[i]);
+			sep = '+';
+		}
+	}
 }
 
 int GPSDriverQL::calcChecksum(const char *msg, size_t msg_length, char* checksum)

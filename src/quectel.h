@@ -65,6 +65,7 @@ private:
 
 	static constexpr unsigned QL_CONFIG_TIMEOUT = 500; // ms, timeout for waiting ACK
 	static constexpr unsigned QL_RESET_ACK_TIMEOUT = 200; // ms, timeout for waiting ACK for hot|warm|cold reset messages
+	static constexpr unsigned QL_SAVEPAR_TIMEOUT = 1500; // ms, timeout for the $PQTMSAVEPAR reply (writes the NVM)
 	static constexpr unsigned QL_OUT_MSG_MAX_SIZE = 50;
 	static constexpr unsigned QL_RECV_BUFFER_SIZE = 1024;
 
@@ -85,6 +86,19 @@ private:
 		NONE,
 		VER1,
 		VER2
+	};
+
+	// Commands of the constellation step, whose replies are matched by name (see sendCmdWaitReply())
+	enum class QlCmd : uint8_t {
+		NONE,
+		CFGCNST, // $PQTMCFGCNST
+		SAVEPAR  // $PQTMSAVEPAR
+	};
+
+	enum class QlCmdReply : uint8_t { // not OK/ERROR: NuttX defines those as macros
+		NONE,
+		REPLY_OK,
+		REPLY_ERROR
 	};
 
 	void handleHeading(float heading_deg, float heading_stddev_deg);
@@ -129,6 +143,27 @@ private:
 
 	bool waitForPqtmAck(char msg[QL_OUT_MSG_MAX_SIZE], unsigned timeout);
 
+	/**
+	 * Select the constellations from GPS_x_GNSS with $PQTMCFGCNST. Reads the receiver's setting and, only if
+	 * it differs, writes it and saves it with $PQTMSAVEPAR; the receiver applies it after its next power
+	 * cycle. 0 sends nothing. Runs once per boot for a given value. Warns on any problem and never fails
+	 * configure().
+	 */
+	void configConstellations(GNSSSystemsMask gnss_systems);
+
+	/**
+	 * Send a $PQTMCFGCNST or $PQTMSAVEPAR command and wait for its own reply; other replies and ACKs are
+	 * ignored. The result is in _cmd_reply, _cmd_error_code and, for a read, _cnst_read/_cnst_read_valid.
+	 * @return true if the command was sent and answered (OK or ERROR) within the timeout
+	 */
+	bool sendCmdWaitReply(char msg[QL_OUT_MSG_MAX_SIZE], QlCmd cmd, unsigned timeout);
+
+	/** Warn about a failed $PQTMCFGCNST,W or $PQTMSAVEPAR (error code or no reply) */
+	void warnCnstCmdFailed(const char *cmd_name, const char *cnst_str);
+
+	/** $PQTMCFGCNST field mask as text, e.g. "1,0,1,1,1,0 GPS+GAL+BDS+QZSS" */
+	static void cnstToString(uint8_t cnst, char *buf, size_t buf_len);
+
 	int calcChecksum(const char *msg, size_t msg_length, char* checksum);
 
 	bool writeMessage(char msg[QL_OUT_MSG_MAX_SIZE]);
@@ -152,6 +187,12 @@ private:
 	uint8_t _ack_nmea_command_result{0};
 	bool _ack_pqtm_command{false}; // true - ACK
 	uint8_t _ack_pqtm_command_error_code{0};
+
+	QlCmd _awaited_cmd{QlCmd::NONE}; // replies are taken only while their command is awaited
+	QlCmdReply _cmd_reply{QlCmdReply::NONE};
+	int _cmd_error_code{0};
+	uint8_t _cnst_read{0}; // fields of the last $PQTMCFGCNST read reply, bit n = field n (QL_CNST_* in quectel.cpp)
+	bool _cnst_read_valid{false};
 
 	OutputMode _output_mode{OutputMode::GPS};
 
