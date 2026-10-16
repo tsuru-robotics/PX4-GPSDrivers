@@ -575,8 +575,6 @@ int GPSDriverQL::handleMessage(int len)
 		/* Extract <EPE_2D> */
 		if (bufptr && *(++bufptr) != ',') { epe_2d = strtof(bufptr, &endp); bufptr = endp; }
 
-		while (*(++bufptr) != ',') {} //skip EPE_3D
-
 		// EPH and EPV
 		_gps_position->eph = epe_2d;
 		_gps_position->epv = epe_down;
@@ -607,7 +605,6 @@ int GPSDriverQL::handleMessage(int len)
 		if (bufptr && *(++bufptr) != ',') { hdop = strtof(bufptr, &endp); bufptr = endp; }
 
 		while (*(++bufptr) != ',') {} //skip NDOP
-		while (*(++bufptr) != ',') {} //skip EDOP
 
 		// DOP
 		_gps_position->hdop = hdop;
